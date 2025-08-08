@@ -57,7 +57,7 @@ bedrock_helper = BedrockHelper(region_name=CHATBOT_REGION)
 
 RUTA_PROMPT = """
     ### Instrucción
-    Genera una ruta de aprendizaje con {numero_retos} retos centrados en los siguientes temas: {temas_formateados}.
+    Genera una ruta de aprendizaje con exactamente **{numero_retos}** retos centrados en los siguientes temas: {temas_formateados}.
 
     ### Contexto para uso interno:
     - Competencia: {competencia}
@@ -65,23 +65,25 @@ RUTA_PROMPT = """
     - Criterio u objetivo de aprendizaje: {criterio}
     - Nivel de complejidad: {complejidad}
     - Temas clave: {temas_formateados}
-    - Documentación relevante: {context}
+    - Documentación relevante: [{context}]
 
-    ### Título de la Ruta de Aprendizaje
-    Primero, escribe un **título para la ruta de aprendizaje**, que:
-    - Tenga un máximo de **6 palabras**.
-    - Use palabras clave relevantes de estos temas: {temas_formateados}.
-    - No uses frases genéricas como “Ruta de aprendizaje...”
+    ### Formato de respuesta
+    Debes generar:
+    1. **Un título breve para la ruta de aprendizaje** que:
+    - Tenga un máximo de 6 palabras.
+    - Use palabras clave relevantes de los temas indicados.
+    - No uses frases genéricas como “Ruta de aprendizaje…”.
     - Ejemplo válido: "Domina los Gráficos y Datos"
-    @Titulo: [Título breve de la ruta de aprendizaje]
+    - El título debe ir en el formato:
+        @Titulo: [Texto del título]
 
-    ### Retos
+    2. **{numero_retos}** retos, cada uno con el siguiente formato:
     @Reto: [Título breve relacionado con un tema distinto]
     @Pregunta: [Pregunta abierta relacionada al tema, nivel {complejidad}]
     @Respuesta Modelo: [Explicación clara, breve y estructurada]
     @Conceptos Claves: [Lista separada por coma de conceptos clave abordados, terminando en punto]
 
-    Proporciona tu respuesta inmediatamente sin ningún preámbulo o información adicional.
+    **Responde exactamente con el formato y el orden indicados, sin texto adicional.**
 """
 
 SYSTEM_PROMPT2 = """
