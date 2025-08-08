@@ -84,6 +84,7 @@ RUTA_PROMPT = """
     Proporciona tu respuesta inmediatamente sin ningún preámbulo o información adicional.
 """
 
+
 SYSTEM_PROMPT2 = """
 Eres un asistente llamado {asistente_nombre} que puede ayudar al usuario con sus preguntas usando **únicamente información confiable**.
 
