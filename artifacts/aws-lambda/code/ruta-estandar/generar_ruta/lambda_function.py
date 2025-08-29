@@ -30,8 +30,8 @@ EMBEDDINGS_MODEL_ID = PARAMETER_VALUE["EMBEDDINGS_MODEL_ID"]
 EMBEDDINGS_REGION = PARAMETER_VALUE["EMBEDDINGS_REGION"]
 
 # Secrets
-#secret_pinecone = SecretsHelper(f"{ENVIRONMENT}/{PROJECT_NAME}/pinecone-api-key2")
-secret_pinecone = SecretsHelper(f"{ENVIRONMENT}/agent-resources/pinecone-api-key")
+secret_pinecone = SecretsHelper(f"{ENVIRONMENT}/{PROJECT_NAME}/pinecone-api")
+#secret_pinecone = SecretsHelper(f"{ENVIRONMENT}/agent-resources/pinecone-api-key")
 PINECONE_INDEX_NAME = secret_pinecone.get_secret_value("PINECONE_INDEX_NAME")
 PINECONE_API_KEY = secret_pinecone.get_secret_value("PINECONE_API_KEY")
 
@@ -75,7 +75,7 @@ RUTA_PROMPT = """
     - No uses frases genéricas como “Ruta de aprendizaje…”.
     - Ejemplo válido: "Domina los Gráficos y Datos"
     - El título debe ir en el formato:
-        @Titulo: [Texto del título]
+        @Nombre: [Texto del título]
 
     2. **{numero_retos}** retos, cada uno con el siguiente formato:
     @Reto: [Título breve relacionado con un tema distinto]

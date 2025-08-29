@@ -102,7 +102,7 @@ FEEDBACK_ALL_PROMPT = """
 
     Devuelve el resultado con el siguiente formato (sin agregar explicaciones adicionales):
 
-    @Retroalimentacion: [Escribe aquí la retroalimentación]
+    @Feedback: [Escribe aquí la retroalimentación]
     @Pregunta: [Escribe aquí la nueva pregunta reformulada]
     @Respuesta Modelo: [Escribe aquí la nueva respuesta modelo]
     @Conceptos Claves: [Lista separada por comas, terminando en punto]
@@ -130,7 +130,48 @@ FEEDBACK_PROMPT = """
 
     Devuelve el resultado con el siguiente formato (sin agregar explicaciones adicionales):
 
-    @Retroalimentacion: [Escribe aquí la retroalimentación]
+    @Feedback: [Escribe aquí la retroalimentación]
+"""
+
+SCORE_PROMPT2 = """
+## Resumen de la tarea:
+Eres un evaluador académico experto en el curso {nombre_curso}. Tu tarea es asignar un puntaje objetivo entre 0.0 y 1.0 a la respuesta de un estudiante, comparándola con una respuesta modelo, según criterios académicos establecidos.
+
+## Información de contexto:
+- A continuación, se presenta el contexto, la pregunta, la respuesta del estudiante y la respuesta modelo esperada.
+- También se indican los temas clave que deben estar presentes en la respuesta.
+
+Contexto:
+{contexto}
+
+Pregunta:
+{pregunta}
+
+Respuesta del estudiante:
+{respuesta_usuario}
+
+Respuesta modelo esperada:
+{respuesta_modelo}
+
+Temas clave esperados:
+{temas_formateados}
+
+## Instrucciones para el modelo:
+- Evalúa la respuesta del estudiante considerando los siguientes criterios:
+  1. Precisión conceptual.
+  2. Cobertura de los puntos clave.
+  3. Claridad y coherencia.
+  4. Equivalencia semántica con la respuesta modelo.
+  5. Relevancia con respecto a los temas clave.
+- DEBES penalizar respuestas que estén vacías, contengan solo signos, emojis o contenido irrelevante.
+- NO DEBES otorgar puntajes altos a respuestas que carezcan de contenido académico significativo.
+- Usa todo el rango de la escala de 0.0 a 1.0 de forma adecuada.
+
+## Requisitos de estilo y formato de la respuesta:
+- DEBES responder SOLO con un número decimal entre 0.0 y 1.0, con dos decimales (ejemplo: 0.75).
+- NO DEBES incluir explicaciones, etiquetas, comentarios ni ningún otro texto adicional.
+- NO USES markdown ni comillas. NO uses bloques ``` de ningún tipo.
+- Responde ÚNICAMENTE el número, con dos decimales.
 """
 
 def get_converse_response(prompt: str, max_tokens: int, temperature: float = 1.0) -> dict:
@@ -224,16 +265,17 @@ def lambda_handler(event, context):
         temas = body.get("Temas", None)
         umbral = body["Umbral"]
         
-        prompt = SCORE_PROMPT.format(
+        prompt = SCORE_PROMPT2.format(
             nombre_curso = nombre_curso,
             contexto = contexto,
             pregunta = pregunta,
-            respuesta_modelo = respuesta_modelo,
             respuesta_usuario = respuesta_usuario,
+            respuesta_modelo = respuesta_modelo,
             temas_formateados = ', '.join(temas)
         )
         
-        response = get_converse_response(prompt=prompt, max_tokens=10, temperature=0.0)
+        response = get_converse_response(prompt=prompt, max_tokens=5, temperature=0.0)
+        logger.info(f"Response Score from Bedrock: {response}")
         score_response = response['output']['message']['content'][0]['text']
 
         # Intentar detectar el número sin etiqueta

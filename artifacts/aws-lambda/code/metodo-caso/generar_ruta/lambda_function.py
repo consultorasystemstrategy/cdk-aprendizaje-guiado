@@ -46,7 +46,7 @@ RUTA_PROMPT = """
     ## Formato obligatorio
     Utilice exactamente el siguiente formato:
 
-    @Titulo: [Título general de la ruta, máximo 6 palabras. Incluya al menos una palabra clave de los temas clave.]
+    @Nombre: [Título general de la ruta, máximo 6 palabras. Incluya al menos una palabra clave de los temas clave.]
 
     (Después, por cada reto:)
 
@@ -58,7 +58,7 @@ RUTA_PROMPT = """
 
     ## Ejemplo
 
-    @Titulo: Explorando patrones en lectura escolar  
+    @Nombre: Explorando patrones en lectura escolar  
 
     @Reto: Diagnóstico del caos en datos  
     @Contexto: La bibliotecaria enfrenta dificultades para extraer patrones. Los estudiantes notan que no hay estructura por género ni frecuencia.  
@@ -80,7 +80,7 @@ RUTA_PROMPT = """
 
     ## Instrucciones específicas
 
-    1. Inicie con un solo `@Titulo` general para toda la ruta.
+    1. Inicie con un solo `@Nombre` general para toda la ruta.
 
     2. Genere cinco retos, uno por cada etapa, usando el formato anterior.
 
