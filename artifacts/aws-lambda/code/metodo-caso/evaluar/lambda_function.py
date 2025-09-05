@@ -138,11 +138,8 @@ SCORE_PROMPT2 = """
 Eres un evaluador académico experto en el curso {nombre_curso}. Tu tarea es asignar un puntaje objetivo entre 0.0 y 1.0 a la respuesta de un estudiante, comparándola con una respuesta modelo, según criterios académicos establecidos.
 
 ## Información de contexto:
-- A continuación, se presenta el contexto, la pregunta, la respuesta del estudiante y la respuesta modelo esperada.
+- A continuación, se presenta la pregunta, la respuesta del estudiante y la respuesta modelo esperada.
 - También se indican los temas clave que deben estar presentes en la respuesta.
-
-Contexto:
-{contexto}
 
 Pregunta:
 {pregunta}
@@ -163,9 +160,11 @@ Temas clave esperados:
   3. Claridad y coherencia.
   4. Equivalencia semántica con la respuesta modelo.
   5. Relevancia con respecto a los temas clave.
-- DEBES penalizar respuestas que estén vacías, contengan solo signos, emojis o contenido irrelevante.
-- NO DEBES otorgar puntajes altos a respuestas que carezcan de contenido académico significativo.
-- Usa todo el rango de la escala de 0.0 a 1.0 de forma adecuada.
+
+## Penalizaciones obligatorias:
+- Si la respuesta está vacía, contiene solo signos, emojis, palabras irrelevantes o ruido (ej. "@@@", "...", "???", "ok", "sí", etc.), el puntaje DEBE ser exactamente **0.00**.
+- NO otorgues puntajes altos ni medios en estos casos.
+- Solo asigna un puntaje > 0.00 cuando exista contenido académico válido y relacionado con los temas clave.
 
 ## Requisitos de estilo y formato de la respuesta:
 - DEBES responder SOLO con un número decimal entre 0.0 y 1.0, con dos decimales (ejemplo: 0.75).
