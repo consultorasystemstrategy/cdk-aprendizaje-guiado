@@ -67,6 +67,7 @@ SCORE_PROMPT = """
     - **No agregues explicaciones, etiquetas, comentarios ni palabras adicionales.**
 """
 
+# Prompt para lanzar una nueva pregunta y feedback cuando la respuesta es incorrecta
 FEEDBACK_ALL_PROMPT = """
     Eres un docente experto en retroalimentación pedagógica. Tu tarea es ayudar a un estudiante que no respondió correctamente una pregunta de evaluación.
 
@@ -104,6 +105,7 @@ FEEDBACK_ALL_PROMPT = """
     @Conceptos Claves: [Lista separada por comas, terminando en punto]
 """
 
+# Prompt para feedback cuando la respuesta es correcta
 FEEDBACK_PROMPT = """
     Eres un docente experto en retroalimentación pedagógica. Tu tarea es generar una retroalimentación breve y profesional.
 
@@ -128,6 +130,7 @@ FEEDBACK_PROMPT = """
     @Feedback: [Escribe aquí la retroalimentación]
 """
 
+# Prompt para evaluación de respuestas
 SCORE_PROMPT2 = """
 ## Resumen de la tarea:
 Eres un evaluador académico experto en el curso {nombre_curso}. Tu tarea es asignar un puntaje objetivo entre 0.0 y 1.0 a la respuesta de un estudiante, comparándola con una respuesta modelo, según criterios académicos establecidos.
@@ -155,9 +158,11 @@ Temas clave esperados:
   3. Claridad y coherencia.
   4. Equivalencia semántica con la respuesta modelo.
   5. Relevancia con respecto a los temas clave.
-- DEBES penalizar respuestas que estén vacías, contengan solo signos, emojis o contenido irrelevante.
-- NO DEBES otorgar puntajes altos a respuestas que carezcan de contenido académico significativo.
-- Usa todo el rango de la escala de 0.0 a 1.0 de forma adecuada.
+
+## Penalizaciones obligatorias:
+- Si la respuesta está vacía, contiene solo signos, emojis, palabras irrelevantes o ruido (ej. "@@@", "...", "???", "ok", "sí", etc.), el puntaje DEBE ser exactamente **0.00**.
+- NO otorgues puntajes altos ni medios en estos casos.
+- Solo asigna un puntaje > 0.00 cuando exista contenido académico válido y relacionado con los temas clave.
 
 ## Requisitos de estilo y formato de la respuesta:
 - DEBES responder SOLO con un número decimal entre 0.0 y 1.0, con dos decimales (ejemplo: 0.75).
