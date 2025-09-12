@@ -70,69 +70,70 @@ SCORE_PROMPT = """
     - **No agregues explicaciones, etiquetas, comentarios ni palabras adicionales.**
 """
 
+# Prompt para lanzar una nueva pregunta y feedback cuando la respuesta es incorrecta
 FEEDBACK_ALL_PROMPT = """
-    Eres un docente experto en retroalimentación pedagógica. Tu tarea es ayudar a un estudiante que no respondió correctamente una pregunta de evaluación.
+## Resumen de la tarea:
+DEBES generar retroalimentación y una nueva oportunidad de aprendizaje para un estudiante que no respondió correctamente una pregunta de evaluación.
 
-    Contexto de retroalimentación:
-    - Curso: {nombre_curso}
-    - Complejidad: {complejidad}
-    - Contexto del caso o situación: {contexto}
-    - Pregunta original: {pregunta}
-    - Respuesta modelo esperada: {respuesta_modelo}
-    - Respuesta del estudiante: {respuesta_usuario}
-    - Temas clave involucrados: {temas_formateados}
+## Información de contexto:
+- Curso: {nombre_curso}
+- Nivel de complejidad: {complejidad}
+- Contexto del caso o situación: {contexto}
+- Pregunta original: {pregunta}
+- Respuesta modelo esperada: {respuesta_modelo}
+- Tu respuesta: {respuesta_usuario}
+- Temas clave implicados: {temas_formateados}
 
-    El puntaje de su respuesta fue bajo.
+## Instrucciones para el modelo:
+1. REDACTA una retroalimentación breve en un máximo de 3 líneas, dirigida en segunda persona del singular (tú), aclarando errores, omisiones o confusiones.
+   - Si tu respuesta fue parcialmente correcta, explica lo que te faltó o interpretaste mal.
+   - Si no evidenciaste comprensión, explica lo esencial del concepto evaluado.
 
-    Tu tarea es:
+2. FORMULA una nueva pregunta, distinta de la original:
+   - Si tu error fue parcial, mantén la complejidad pero cambia el enfoque para reforzar lo omitido.
+   - Si no demostraste comprensión, reduce ligeramente la complejidad e incluye los conceptos clave omitidos.
 
-    1. Generar una retroalimentación breve (máximo 3 líneas) que oriente al estudiante sobre su error, omisión o confusión.
-    - Si su respuesta es parcialmente correcta, enfócate en aclarar lo que faltó o se interpretó mal.
-    - Si su respuesta no evidencia comprensión, enfócate en explicar lo esencial del concepto o propósito del tema evaluado.
+3. REDACTA una respuesta modelo clara y precisa alineada con la nueva pregunta.
 
-    2. Reformular una nueva pregunta (no repetir la misma), tomando en cuenta el **contexto proporcionado**:
-    - Si el error fue parcial, mantener la complejidad, pero cambiar el enfoque o el caso para reforzar el concepto omitido.
-    - Si el estudiante no demuestra comprensión alguna, reducir ligeramente la complejidad y asegurar que se toquen los conceptos clave omitidos.
+4. ACTUALIZA la lista de conceptos clave en función de la nueva pregunta.
 
-    La nueva pregunta debe ser diferente de la original y enfocarse en ayudar al estudiante a superar su dificultad.
-
-    3. Brindar una respuesta modelo clara, precisa y alineada con la nueva pregunta.
-
-    4. Actualizar la lista de conceptos clave en función de la nueva pregunta formulada.
-
-    Devuelve el resultado con el siguiente formato (sin agregar explicaciones adicionales):
-
-    @Feedback: [Escribe aquí la retroalimentación]
-    @Pregunta: [Escribe aquí la nueva pregunta reformulada]
-    @Respuesta Modelo: [Escribe aquí la nueva respuesta modelo]
-    @Conceptos Claves: [Lista separada por comas, terminando en punto]
+## Estilo y formato de la respuesta:
+- Devuelve SIEMPRE el resultado con el siguiente formato:
+  @Feedback: [Retroalimentación breve en segunda persona]
+  @Pregunta: [Nueva pregunta reformulada]
+  @Respuesta Modelo: [Nueva respuesta modelo]
+  @Conceptos Claves: [Lista de conceptos clave separados por comas y terminados en punto]
 """
 
+# Prompt para feedback cuando la respuesta es correcta
 FEEDBACK_PROMPT = """
-    Eres un docente experto en retroalimentación pedagógica. Tu tarea es generar una retroalimentación breve y profesional.
+## Resumen de la tarea:
+DEBES redactar una retroalimentación breve y profesional para un estudiante que ha respondido correctamente una pregunta de evaluación.
 
-    Contexto de retroalimentación:
-    - Curso: {nombre_curso}
-    - Complejidad: {complejidad}
-    - Contexto del caso o situación: {contexto}
-    - Pregunta original: {pregunta}
-    - Respuesta modelo esperada: {respuesta_modelo}
-    - Respuesta del estudiante: {respuesta_usuario}
-    - Temas clave involucrados: {temas_formateados}
+## Información de contexto:
+- Curso: {nombre_curso}
+- Nivel de complejidad: {complejidad}
+- Contexto del caso o situación: {contexto}
+- Pregunta original: {pregunta}
+- Respuesta modelo esperada: {respuesta_modelo}
+- Tu respuesta: {respuesta_usuario}
+- Temas clave implicados: {temas_formateados}
 
-    El puntaje de su respuesta fue alto. 
+## Instrucciones para el modelo:
+- REDACTA la retroalimentación en segunda persona del singular (tú).  
+- RECONOCE de manera directa qué concepto o proceso has comprendido correctamente.  
+- INCLUYE una sugerencia concreta y moderada para seguir profundizando o aplicando lo aprendido.  
+- MANTÉN un estilo académico, sobrio y orientado al acompañamiento.  
+- NO UTILICES signos de exclamación ni expresiones emotivas o coloquiales.  
+- LIMÍTATE a un máximo de 3 líneas en un solo párrafo.  
 
-    Tu tarea es:
+## Estilo y formato de la respuesta:
+- Devuelve SIEMPRE el resultado con el siguiente formato:  
 
-    1. Generar una retroalimentación breve (máximo 3 líneas) que:
-    - Reconozca de forma directa qué concepto o proceso ha comprendido correctamente el estudiante **en función del contexto proporcionado**.
-    - Incluya una sugerencia concreta y moderada para seguir profundizando o aplicando lo aprendido dentro de situaciones similares o más complejas.
-
-    Devuelve el resultado con el siguiente formato (sin agregar explicaciones adicionales):
-
-    @Feedback: [Escribe aquí la retroalimentación]
+@Feedback: [Escribe aquí la retroalimentación en segunda persona]
 """
 
+# Prompt para evaluación de respuestas
 SCORE_PROMPT2 = """
 ## Resumen de la tarea:
 Eres un evaluador académico experto en el curso {nombre_curso}. Tu tarea es asignar un puntaje objetivo entre 0.0 y 1.0 a la respuesta de un estudiante, comparándola con una respuesta modelo, según criterios académicos establecidos.
@@ -140,6 +141,9 @@ Eres un evaluador académico experto en el curso {nombre_curso}. Tu tarea es asi
 ## Información de contexto:
 - A continuación, se presenta la pregunta, la respuesta del estudiante y la respuesta modelo esperada.
 - También se indican los temas clave que deben estar presentes en la respuesta.
+
+Contexto:
+{contexto}
 
 Pregunta:
 {pregunta}
@@ -160,6 +164,10 @@ Temas clave esperados:
   3. Claridad y coherencia.
   4. Equivalencia semántica con la respuesta modelo.
   5. Relevancia con respecto a los temas clave.
+
+## Reglas adicionales:
+- Si la respuesta del estudiante es **semánticamente equivalente** a la respuesta modelo, incluso si está redactada con otras palabras, sinónimos o parafraseos, el puntaje DEBE ser exactamente **1.00**.
+- Considera como válidas las respuestas que expresen correctamente los temas clave aunque usen distinta redacción.
 
 ## Penalizaciones obligatorias:
 - Si la respuesta está vacía, contiene solo signos, emojis, palabras irrelevantes o ruido (ej. "@@@", "...", "???", "ok", "sí", etc.), el puntaje DEBE ser exactamente **0.00**.

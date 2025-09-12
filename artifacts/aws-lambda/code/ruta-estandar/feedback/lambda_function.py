@@ -39,13 +39,20 @@ DEBES redactar una retroalimentación final en un solo párrafo, de forma DIRECT
 - Título del reto: {reto}
 - Nivel de complejidad: {complejidad}
 - Pregunta que respondió el estudiante: {pregunta}
-- Retroalimentaciones previas brindadas según sus respuestas: {feedback}
+- Respuesta modelo esperada: {respuesta_modelo}
+- Umbral de aprobación asignado al reto: {umbral} 
+- Número máximo de intentos permitidos: {maximos_intentos}
+- Número de intentos realizados por el estudiante: {intentos}
+- Puntajes obtenidos por el estudiante en cada intento: {puntajes}
+- Retroalimentaciones previas proporcionadas al estudiante: {feedback}
 - Temas clave implicados en la pregunta y que se deben dominar: {temas_formateados}
 
 ## Instrucciones para el modelo:
-- NO ASUMAS niveles de logro o comprensión que no estén claramente sustentados en la retroalimentación anterior.
+- NO ASUMAS niveles de logro o comprensión que no estén claramente sustentados en las retroalimentaciones anteriores.
 - INTEGRA los errores observados como sugerencias de mejora presentadas de manera constructiva.
-- INCLUYE recomendaciones específicas orientadas a reforzar los aprendizajes (por ejemplo: repasar conceptos clave, resolver ejercicios adicionales, revisar materiales complementarios).
+- ENFATIZA si el estudiante alcanzó o no el umbral, y orienta la retroalimentación según ese resultado.
+- INCLUYE recomendaciones específicas orientadas a reforzar los aprendizajes.
+- REDACTA siempre en segunda persona del singular (tú).
 - EL TONO debe ser profesional, sobrio y orientado al acompañamiento académico.
 - NO UTILICES signos de exclamación ni expresiones emotivas o entusiastas.
 
@@ -81,14 +88,14 @@ def get_converse_response(prompt: str, max_tokens: int, temperature: float = 1.0
 
     return response
 
-
 def lambda_handler(event, context):
     try:
         body = event.get('body', event)
         if isinstance(body, str):
             body = json.loads(body)
 
-        required_fields = ["NombreCurso", "Complejidad", "Reto", "Pregunta", "RespuestaModelo", "Temas", "Feedback"]
+        #required_fields = ["NombreCurso", "Reto", "Complejidad", "Pregunta", "RespuestaModelo", "Feedback", "Temas"]
+        required_fields = ["NombreCurso", "Reto", "Complejidad", "Pregunta", "RespuestaModelo", "Umbral", "MaximosIntentos", "Intentos", "Puntajes", "Feedback", "Temas"]
         missing_fields = [field for field in required_fields if field not in body]
         if missing_fields:
             return {
@@ -102,12 +109,16 @@ def lambda_handler(event, context):
             }
         
         nombre_curso = body["NombreCurso"]
-        complejidad = body["Complejidad"]
         reto = body["Reto"]
+        complejidad = body["Complejidad"]
         pregunta = body["Pregunta"]
         respuesta_modelo = body["RespuestaModelo"]
-        temas = body.get("Temas", None)
+        umbral = body["Umbral"]
+        maximos_intentos = body["MaximosIntentos"]
+        intentos = body["Intentos"]
+        puntajes = body["Puntajes"]
         feedback = body.get("Feedback", None)
+        temas = body.get("Temas", None)
         
         prompt = FEEDBACK_PROMPT.format(
             nombre_curso=nombre_curso,
@@ -115,10 +126,14 @@ def lambda_handler(event, context):
             complejidad=complejidad,
             pregunta=pregunta,
             respuesta_modelo=respuesta_modelo,
-            feedback= ', '.join(feedback),
-            temas_formateados= ', '.join(temas),
+            umbral=umbral,
+            maximos_intentos=maximos_intentos,
+            intentos=intentos,
+            puntajes=', '.join(puntajes),
+            feedback=', '.join(feedback),
+            temas_formateados=', '.join(temas)
         )
-        response = get_converse_response(prompt = prompt, max_tokens=CHATBOT_LLM_MAX_TOKENS, temperature=0.5)
+        response = get_converse_response(prompt=prompt, max_tokens=CHATBOT_LLM_MAX_TOKENS, temperature=0.5)
         feedback_response = response['output']['message']['content'][0]['text']
         input_tokens = response['usage']['inputTokens']
         output_tokens = response['usage']['outputTokens']
