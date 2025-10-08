@@ -3,6 +3,9 @@ import os
 import re
 from boto3.dynamodb.conditions import Key, Attr
 from datetime import datetime, timedelta
+from .prompts.estrategico_prompt import RUTA_ESTRATEGICO_PROMPT
+from .prompts.abp_prompt import RUTA_ABP_PROMPT
+from .prompts.clinico_psicologia_prompt import RUTA_CLINICO_PSICOLOGIA_PROMPT
 from aje_libs.common.helpers.bedrock_helper import BedrockHelper
 from aje_libs.common.helpers.dynamodb_helper import DynamoDBHelper
 from aje_libs.common.helpers.s3_helper import S3Helper
@@ -22,11 +25,6 @@ PARAMETER_VALUE = json.loads(ssm_agent.get_parameter_value())
 CHATBOT_MODEL_ID = PARAMETER_VALUE["CHATBOT_MODEL_ID"]
 CHATBOT_REGION = PARAMETER_VALUE["CHATBOT_REGION"]
 CHATBOT_LLM_MAX_TOKENS = int(PARAMETER_VALUE["CHATBOT_LLM_MAX_TOKENS"])
-CHATBOT_HISTORY_ELEMENTS = int(PARAMETER_VALUE["CHATBOT_HISTORY_ELEMENTS"])
-PINECONE_MAX_RETRIEVE_DOCUMENTS = int(PARAMETER_VALUE["PINECONE_MAX_RETRIEVE_DOCUMENTS"])
-PINECONE_MIN_THRESHOLD = float(PARAMETER_VALUE["PINECONE_MIN_THRESHOLD"])
-EMBEDDINGS_MODEL_ID = PARAMETER_VALUE["EMBEDDINGS_MODEL_ID"]
-EMBEDDINGS_REGION = PARAMETER_VALUE["EMBEDDINGS_REGION"]
 
 logger = custom_logger(__name__, owner=OWNER, service=PROJECT_NAME)
 
@@ -39,6 +37,7 @@ learning_path_table_helper = DynamoDBHelper(
 
 bedrock_helper = BedrockHelper(region_name=CHATBOT_REGION)
 
+'''
 RUTA_PROMPT = """
     ## Tarea
     Generar cinco retos formativos alineados con las etapas del análisis de casos individuales, utilizando el caso proporcionado y los datos curriculares. Cada reto debe evaluar una habilidad específica por etapa, usando el caso como base y respetando la estructura detallada.
@@ -131,10 +130,11 @@ Instrucciones del modelo:
 - **NO inventes información** ni generes contenido fuera del ámbito educativo salvo que el usuario lo solicite explícitamente.
 - Mantén **siempre un tono formal, claro y enfocado al ámbito académico**.
 """
+'''
 
-def get_converse_response(prompt: str, max_tokens: int, temperature: float = 1.0) -> dict:
+def invoke_prompt(prompt: str, max_tokens: int, temperature: float = 1.0) -> dict:
     """
-    Conversa con el modelo de Bedrock usando un prompt de sistema separado y mensajes estructurados.
+    Conversa con el modelo de Bedrock usando un prompt.
     
     Parámetros:
     - prompt: texto con las instrucciones del prompt
@@ -142,12 +142,11 @@ def get_converse_response(prompt: str, max_tokens: int, temperature: float = 1.0
     - temperature: control de aleatoriedad
     """
 
-    logger.info(json.dumps(prompt, indent=2))
-
+    logger.info(f"Prompt enviado al modelo: {prompt}")
     parameters = {
         "max_tokens": max_tokens,
         "temperature": temperature,
-        "top_p": 0.2
+        "top_p": 0.8
     }
 
     response = bedrock_helper.converse(
@@ -155,10 +154,11 @@ def get_converse_response(prompt: str, max_tokens: int, temperature: float = 1.0
         messages=[{"role": "user", "content": [{"text": prompt}]}],
         parameters=parameters
     )
+    logger.info(f"Respuesta del modelo: {response}")
 
     return response
 
-def upload_ruta(usuario_id: int, silabo_id: int, unidad_id: int, sesion_id: int, prompt_msg: str, ai_msg: str, input_tokens: int, output_tokens: int):
+def upload_ruta(plantilla_id: int, usuario_id: int, silabo_id: int, unidad_id: int, sesion_id: int, prompt_msg: str, ai_msg: str, input_tokens: int, output_tokens: int):
     """
     Sube una ruta a la tabla DynamoDB con los datos especificados.
     """
@@ -170,7 +170,8 @@ def upload_ruta(usuario_id: int, silabo_id: int, unidad_id: int, sesion_id: int,
         ttl_timestamp = int((datetime.now() + timedelta(seconds=ttl_seconds)).timestamp())
 
         item = {
-            "tipo_metodo_id": 674, # Ruta estándar
+            "tipo_metodo_id": 675, # Método del caso
+            "plantilla_id": plantilla_id,
             "usuario_id": usuario_id,
             "date_time": current_datetime,
             "silabo_id": silabo_id,
@@ -194,7 +195,7 @@ def lambda_handler(event, context):
         if isinstance(body, str):
             body = json.loads(body)
 
-        required_fields = ["UsuarioId", "SilaboId", "UnidadId", "SesionId", "NombreCurso", "Competencia", "Capacidad", "Criterio", "Complejidad", "Temas", "Caso"]
+        required_fields = ["UsuarioId", "SilaboId", "UnidadId", "SesionId", "PlantillaId", "NombreCurso", "Competencia", "Capacidad", "Criterio", "Complejidad", "Temas", "Caso"]
         missing_fields = [field for field in required_fields if field not in body]
         if missing_fields:
             return {
@@ -213,6 +214,7 @@ def lambda_handler(event, context):
         syllabus_event_id = body["SilaboId"]
         unidad_id = body["UnidadId"]
         sesion_id = body["SesionId"]
+        plantilla_id = body["PlantillaId"]
         nombre_curso = body["NombreCurso"]
         competencia = body["Competencia"]
         capacidad = body["Capacidad"]
@@ -221,21 +223,41 @@ def lambda_handler(event, context):
         temas = body.get("Temas", None)
         caso = body["Caso"]
 
-        prompt = RUTA_PROMPT.format(
-            competencia=competencia,
-            capacidad=capacidad,
-            criterio=criterio,
-            complejidad=complejidad,
-            temas_formateados=', '.join(temas),
-            caso=caso
-        )
+        if plantilla_id == 0: # Estratégico
+            prompt = RUTA_ESTRATEGICO_PROMPT.format(
+                competencia=competencia,
+                capacidad=capacidad,
+                criterio=criterio,
+                complejidad=complejidad,
+                temas_formateados=', '.join(temas),
+                caso=caso
+            )
+        elif plantilla_id == 1: # ABP
+            prompt = RUTA_ABP_PROMPT.format(
+                competencia=competencia,
+                capacidad=capacidad,
+                criterio=criterio,
+                complejidad=complejidad,
+                temas_formateados=', '.join(temas),
+                caso=caso
+            )
+        elif plantilla_id == 2: # Clínico Psicología
+            prompt = RUTA_CLINICO_PSICOLOGIA_PROMPT.format(
+                competencia=competencia,
+                capacidad=capacidad,
+                criterio=criterio,
+                complejidad=complejidad,
+                temas_formateados=', '.join(temas),
+                caso=caso
+            )
 
-        response = get_converse_response(prompt=prompt, max_tokens=CHATBOT_LLM_MAX_TOKENS, temperature=0.7)
+        response = invoke_prompt(prompt=prompt, max_tokens=CHATBOT_LLM_MAX_TOKENS, temperature=0.7)
         learning_path = response['output']['message']['content'][0]['text']
         input_tokens = response['usage']['inputTokens']
         output_tokens = response['usage']['outputTokens']
 
         upload_ruta(
+            plantilla_id=plantilla_id,
             usuario_id=user_id,
             silabo_id=syllabus_event_id,
             unidad_id=unidad_id,

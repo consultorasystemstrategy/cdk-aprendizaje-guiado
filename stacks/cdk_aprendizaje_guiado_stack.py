@@ -357,30 +357,34 @@ class CdkAprendizajeGuiadoStack(Stack):
         )
         
         # Define REST-API resources
-        root_agent_api = self.api_ruta_estandar.root.add_resource("api")
-        root_agent_v1 = root_agent_api.add_resource("v1")
+        root_api = self.api_ruta_estandar.root.add_resource("api")
+        root_v1 = root_api.add_resource("v1")
 
-        # Endpoints for the main functionalities
-        root_agent_generar_ruta_estandar = root_agent_v1.add_resource("generar_ruta_estandar")
-        root_agent_evaluar_reto_estandar = root_agent_v1.add_resource("evaluar_reto_estandar")
-        root_agent_feedback_estandar = root_agent_v1.add_resource("feedback_estandar")
-        root_agent_regenerar_reto_estandar = root_agent_v1.add_resource("regenerar_reto_estandar")
+        # Ruta estándar
+        ruta_estandar = root_v1.add_resource("ruta-estandar")
 
-        root_agent_generar_caso = root_agent_v1.add_resource("generar_caso")
-        root_agent_generar_ruta_caso = root_agent_v1.add_resource("generar_ruta_caso")
-        root_agent_evaluar_reto_caso = root_agent_v1.add_resource("evaluar_reto_caso")
-        root_agent_feedback_caso = root_agent_v1.add_resource("feedback_caso")
+        generar_ruta = ruta_estandar.add_resource("generar_ruta")
+        evaluar_reto = ruta_estandar.add_resource("evaluar_reto")
+        feedback = ruta_estandar.add_resource("feedback")
+        regenerar_reto = ruta_estandar.add_resource("regenerar_reto")
 
-        # Define all API-Lambda integrations for the API methods
-        root_agent_generar_ruta_estandar.add_method("POST", apigw.LambdaIntegration(self.ruta_estandar_generar_ruta_lambda))
-        root_agent_evaluar_reto_estandar.add_method("POST", apigw.LambdaIntegration(self.ruta_estandar_evaluar_lambda))
-        root_agent_feedback_estandar.add_method("POST", apigw.LambdaIntegration(self.ruta_estandar_feedback_lambda))
-        root_agent_regenerar_reto_estandar.add_method("POST", apigw.LambdaIntegration(self.ruta_estandar_regenerar_reto_lambda))
+        generar_ruta.add_method("POST", apigw.LambdaIntegration(self.ruta_estandar_generar_ruta_lambda))
+        evaluar_reto.add_method("POST", apigw.LambdaIntegration(self.ruta_estandar_evaluar_lambda))
+        feedback.add_method("POST", apigw.LambdaIntegration(self.ruta_estandar_feedback_lambda))
+        regenerar_reto.add_method("POST", apigw.LambdaIntegration(self.ruta_estandar_regenerar_reto_lambda))
 
-        root_agent_generar_caso.add_method("POST", apigw.LambdaIntegration(self.metodo_caso_generar_caso_lambda))
-        root_agent_generar_ruta_caso.add_method("POST", apigw.LambdaIntegration(self.metodo_caso_generar_ruta_lambda))
-        root_agent_evaluar_reto_caso.add_method("POST", apigw.LambdaIntegration(self.metodo_caso_evaluar_lambda))
-        root_agent_feedback_caso.add_method("POST", apigw.LambdaIntegration(self.metodo_caso_feedback_lambda))
+        # Método del caso
+        metodo_caso = root_v1.add_resource("metodo-caso")
+
+        generar_caso = metodo_caso.add_resource("generar_caso")
+        generar_ruta_caso = metodo_caso.add_resource("generar_ruta")
+        evaluar_reto_caso = metodo_caso.add_resource("evaluar_reto")
+        feedback_caso = metodo_caso.add_resource("feedback")
+
+        generar_caso.add_method("POST", apigw.LambdaIntegration(self.metodo_caso_generar_caso_lambda))
+        generar_ruta_caso.add_method("POST", apigw.LambdaIntegration(self.metodo_caso_generar_ruta_lambda))
+        evaluar_reto_caso.add_method("POST", apigw.LambdaIntegration(self.metodo_caso_evaluar_lambda))
+        feedback_caso.add_method("POST", apigw.LambdaIntegration(self.metodo_caso_feedback_lambda))
         
         # Store the deployment stage for use in outputs
         self.deployment_stage = self.PROJECT_CONFIG.environment.value.lower()

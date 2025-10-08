@@ -3,6 +3,9 @@ import os
 import re
 from boto3.dynamodb.conditions import Key, Attr
 from datetime import datetime, timedelta
+from .prompts.estrategico_prompt import CASO_ESTRATEGICO_PROMPT
+from .prompts.abp_prompt import ABP_PROMPT
+from .prompts.clinico_psicologia_prompt import CLINICO_PSICOLOGIA_PROMPT
 from aje_libs.common.helpers.bedrock_helper import BedrockHelper
 from aje_libs.common.helpers.dynamodb_helper import DynamoDBHelper
 from aje_libs.common.helpers.s3_helper import S3Helper
@@ -22,11 +25,6 @@ PARAMETER_VALUE = json.loads(ssm_agent.get_parameter_value())
 CHATBOT_MODEL_ID = PARAMETER_VALUE["CHATBOT_MODEL_ID"]
 CHATBOT_REGION = PARAMETER_VALUE["CHATBOT_REGION"]
 CHATBOT_LLM_MAX_TOKENS = int(PARAMETER_VALUE["CHATBOT_LLM_MAX_TOKENS"])
-CHATBOT_HISTORY_ELEMENTS = int(PARAMETER_VALUE["CHATBOT_HISTORY_ELEMENTS"])
-PINECONE_MAX_RETRIEVE_DOCUMENTS = int(PARAMETER_VALUE["PINECONE_MAX_RETRIEVE_DOCUMENTS"])
-PINECONE_MIN_THRESHOLD = float(PARAMETER_VALUE["PINECONE_MIN_THRESHOLD"])
-EMBEDDINGS_MODEL_ID = PARAMETER_VALUE["EMBEDDINGS_MODEL_ID"]
-EMBEDDINGS_REGION = PARAMETER_VALUE["EMBEDDINGS_REGION"]
 
 logger = custom_logger(__name__, owner=OWNER, service=PROJECT_NAME)
 
@@ -39,6 +37,7 @@ case_history_table_helper = DynamoDBHelper(
 
 bedrock_helper = BedrockHelper(region_name=CHATBOT_REGION)
 
+'''
 CASO_ESCOLAR_PROMPT = """
     ## Tarea
     Escribe un caso breve para estudiantes de nivel primaria. El caso debe ser claro, cercano y sin soluciones ni juicios.
@@ -144,31 +143,11 @@ CASO_AVANZADO_PROMPT = """
     7. Alternativas estratégicas
     8. Información operativa mínima
 """
+'''
 
-SYSTEM_PROMPT2 = """
-Eres un asistente llamado {asistente_nombre} que puede ayudar al usuario con sus preguntas usando **únicamente información confiable**.
-
-Contexto del usuario:
-- Rol del usuario: {usuario_rol}
-- Nombre del usuario: {usuario_nombre}
-- Curso: {curso}
-- Institución: {institucion}
-
-Instrucciones del modelo:
-- Debe proporcionar una respuesta concisa a preguntas sencillas cuando la respuesta se encuentre directamente en los resultados
-  de búsqueda. Sin embargo, en el caso de preguntas de sí/no, proporcione algunos detalles.
-- Si la pregunta requiere un razonamiento complejo, debe buscar información relevante en los resultados de búsqueda y resumir la
-  respuesta basándose en dicha información mediante un razonamiento lógico.
-- Si los resultados de búsqueda no contienen información que pueda responder a la pregunta, indique que no pudo encontrar una
-  respuesta exacta. Si los resultados de búsqueda son completamente irrelevantes, indique que no pudo encontrar una respuesta exacta y resuma los resultados.
-- **NO uses información externa que no esté en los resultados de búsqueda**, excepto para dar explicaciones conceptuales generales del curso **{curso}**.
-- **NO inventes información** ni generes contenido fuera del ámbito educativo salvo que el usuario lo solicite explícitamente.
-- Mantén **siempre un tono formal, claro y enfocado al ámbito académico**.
-"""
-
-def get_converse_response(prompt: str, max_tokens: int, temperature: float = 1.0) -> dict:
+def invoke_prompt(prompt: str, max_tokens: int, temperature: float = 1.0) -> dict:
     """
-    Conversa con el modelo de Bedrock usando un prompt de sistema separado y mensajes estructurados.
+    Conversa con el modelo de Bedrock usando un prompt.
     
     Parámetros:
     - prompt: texto con las instrucciones del prompt
@@ -176,12 +155,11 @@ def get_converse_response(prompt: str, max_tokens: int, temperature: float = 1.0
     - temperature: control de aleatoriedad
     """
 
-    logger.info(json.dumps(prompt, indent=2))
-
+    logger.info(f"Prompt enviado al modelo: {prompt}")
     parameters = {
         "max_tokens": max_tokens,
         "temperature": temperature,
-        "top_p": 0.2
+        "top_p": 0.8
     }
 
     response = bedrock_helper.converse(
@@ -189,10 +167,11 @@ def get_converse_response(prompt: str, max_tokens: int, temperature: float = 1.0
         messages=[{"role": "user", "content": [{"text": prompt}]}],
         parameters=parameters
     )
+    logger.info(f"Respuesta del modelo: {response}")
 
     return response
 
-def upload_caso(usuario_id: int, silabo_id: int, unidad_id: int, sesion_id: int, prompt_msg: str, ai_msg: str, input_tokens: int, output_tokens: int):
+def upload_caso(plantilla_id: int, usuario_id: int, silabo_id: int, unidad_id: int, sesion_id: int, prompt_msg: str, ai_msg: str, input_tokens: int, output_tokens: int):
     """
     Sube un caso a la tabla DynamoDB con los datos especificados.
     """
@@ -205,6 +184,7 @@ def upload_caso(usuario_id: int, silabo_id: int, unidad_id: int, sesion_id: int,
 
         item = {
             "tipo_metodo_id": 675, # Método del caso
+            "plantilla_id": plantilla_id,
             "usuario_id": usuario_id,
             "date_time": current_datetime,
             "silabo_id": silabo_id,
@@ -228,7 +208,7 @@ def lambda_handler(event, context):
         if isinstance(body, str):
             body = json.loads(body)
 
-        required_fields = ["UsuarioId", "SilaboId", "UnidadId", "SesionId", "Contexto", "NombreCurso", "Competencia", "Capacidad", "Criterio", "Complejidad", "Temas"]
+        required_fields = ["UsuarioId", "SilaboId", "UnidadId", "SesionId", "PlantillaId", "Contexto", "NombreCurso", "Competencia", "Capacidad", "Criterio", "Complejidad", "Temas"]
         missing_fields = [field for field in required_fields if field not in body]
         if missing_fields:
             return {
@@ -247,6 +227,7 @@ def lambda_handler(event, context):
         syllabus_event_id = body["SilaboId"]
         unidad_id = body["UnidadId"]
         sesion_id = body["SesionId"]
+        plantilla_id = body["PlantillaId"]
         contexto = body["Contexto"]
         nombre_curso = body["NombreCurso"]
         competencia = body["Competencia"]
@@ -255,9 +236,8 @@ def lambda_handler(event, context):
         complejidad = body["Complejidad"]
         temas = body.get("Temas", None)
 
-        prompt = ""
-        if complejidad == 'Fácil':
-            prompt = CASO_ESCOLAR_PROMPT.format(
+        if plantilla_id == 0: # Estratégico
+            prompt = CASO_ESTRATEGICO_PROMPT.format(
                 contexto=contexto,
                 nombre_curso=nombre_curso,
                 competencia=competencia,
@@ -266,8 +246,18 @@ def lambda_handler(event, context):
                 complejidad=complejidad,
                 temas_formateados=', '.join(temas),
             )
-        else:
-            prompt = CASO_AVANZADO_PROMPT.format(
+        elif plantilla_id == 1: # ABP
+            prompt = ABP_PROMPT.format(
+                contexto=contexto,
+                nombre_curso=nombre_curso,
+                competencia=competencia,
+                capacidad=capacidad,
+                criterio=criterio,
+                complejidad=complejidad,
+                temas_formateados=', '.join(temas),
+            )
+        elif plantilla_id == 2: # Clínico Psicología
+            prompt = CLINICO_PSICOLOGIA_PROMPT.format(
                 contexto=contexto,
                 nombre_curso=nombre_curso,
                 competencia=competencia,
@@ -277,13 +267,14 @@ def lambda_handler(event, context):
                 temas_formateados=', '.join(temas),
             )
 
-        response = get_converse_response(prompt = prompt, max_tokens=2000, temperature=0.7)
+        response = invoke_prompt(prompt=prompt, max_tokens=CHATBOT_LLM_MAX_TOKENS, temperature=0.7)
         case = response['output']['message']['content'][0]['text']
         input_tokens = response['usage']['inputTokens']
         output_tokens = response['usage']['outputTokens']
 
         # Guardar en historial
         upload_caso(
+            plantilla_id=plantilla_id,
             usuario_id=user_id,
             silabo_id=syllabus_event_id,
             unidad_id=unidad_id,
