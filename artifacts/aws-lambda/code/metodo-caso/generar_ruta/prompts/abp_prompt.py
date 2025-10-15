@@ -18,7 +18,7 @@ El modelo debe usar exactamente el siguiente formato:
 
 @Reto: [Título breve del desafío]
 @Contexto: [Describa el contexto del reto usando hechos, actores o tensiones del proyecto.]
-@Pregunta: [Incluya **2 o 3 preguntas clave**, formuladas de manera secuencial según la etapa correspondiente. La **última subpregunta** debe aplicar directamente **uno de los temas clave** listados en {temas_formateados}.]
+@Pregunta: [Incluya **2 o 3 preguntas clave**, **cada una en su propia línea**, **sin viñetas ni numeración**, separadas únicamente por el carácter de salto de línea (\n). La **última subpregunta** debe aplicar directamente **uno de los temas clave** listados en {temas_formateados}.]
 @Respuesta Modelo: [Responda cada pregunta de forma analítica, contextual y coherente, siguiendo el mismo orden en que fueron planteadas.]
 @Conceptos Clave: [**Debe iniciar con el mismo tema clave exacto usado en la subpregunta final**, seguido de otros conceptos o herramientas relacionados. Separe por comas y termine con punto.]
 
@@ -64,17 +64,18 @@ El modelo debe usar exactamente el siguiente formato:
 
 1. Inicie con un único `@Nombre` general que represente toda la ruta.
 2. Genere **cinco retos**, uno por cada etapa del ABP, respetando la estructura obligatoria.
-3. Cada reto debe contener **2 o 3 preguntas** y sus respuestas modelo correspondientes.
-4. Alinee cada reto con los objetivos y temas clave definidos.
-5. **Nivel de complejidad:**
+3. `@Pregunta` debe contener **exactamente 2 o 3 subpreguntas**, cada una en **una sola línea de texto**, **sin guiones, numeración, emojis u otros prefijos**, separadas únicamente por `\n` y terminadas con signo de interrogación `?`.
+4. Cada subpregunta debe ir en una **línea separada**, usando un **salto de línea (\n)** entre ellas. **Prohibido** usar listas o saltos adicionales.
+5. Alinee cada reto con los objetivos y temas clave definidos.
+6. **Nivel de complejidad:**
    - “Fácil”: Aplicación directa de conceptos o métodos.
    - “Intermedio o Difícil”: Requiere análisis, integración, justificación o toma de decisiones.
-6. Evite repetir ideas o contextos entre retos.
-7. Use lenguaje técnico, académico y preciso.
-8. Devuelva los cinco retos juntos, sin explicaciones adicionales ni etiquetas nuevas.
-9. Verifique que cada reto tenga **exactamente** estas secciones:
+7. Evite repetir ideas o contextos entre retos.
+8. Use lenguaje técnico, académico y preciso.
+9. Devuelva los cinco retos juntos, sin explicaciones adicionales ni etiquetas nuevas.
+10. Verifique que cada reto tenga **exactamente** estas secciones:
 `@Reto`, `@Contexto`, `@Pregunta`, `@Respuesta Modelo`, `@Conceptos Clave`.
-10. **Trazabilidad obligatoria:** 
+11. **Trazabilidad obligatoria:** 
     - La **última subpregunta** debe aplicar directamente **uno de los temas clave** listados en {temas_formateados}.  
     - Ese mismo tema debe aparecer **primero en `@Conceptos Clave`**, escrito exactamente igual.
 """
