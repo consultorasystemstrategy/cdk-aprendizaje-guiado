@@ -1,5 +1,6 @@
 import json
 import os
+
 import boto3
 from aje_libs.common.helpers.bedrock_helper import BedrockHelper
 from aje_libs.common.helpers.dynamodb_helper import DynamoDBHelper
@@ -16,19 +17,14 @@ OWNER = os.environ["OWNER"]
 # Parameter Store
 ssm_agent = SSMParameterHelper(f"/{ENVIRONMENT}/{PROJECT_NAME}/agent")
 PARAMETER_VALUE = json.loads(ssm_agent.get_parameter_value())
-CHATBOT_MODEL_ID = PARAMETER_VALUE["CHATBOT_MODEL_ID"]
-CHATBOT_REGION = PARAMETER_VALUE["CHATBOT_REGION"]
-CHATBOT_LLM_MAX_TOKENS = int(PARAMETER_VALUE["CHATBOT_LLM_MAX_TOKENS"])
-CHATBOT_HISTORY_ELEMENTS = int(PARAMETER_VALUE["CHATBOT_HISTORY_ELEMENTS"])
-PINECONE_MAX_RETRIEVE_DOCUMENTS = int(PARAMETER_VALUE["PINECONE_MAX_RETRIEVE_DOCUMENTS"])
-PINECONE_MIN_THRESHOLD = float(PARAMETER_VALUE["PINECONE_MIN_THRESHOLD"])
-EMBEDDINGS_MODEL_ID = PARAMETER_VALUE["EMBEDDINGS_MODEL_ID"]
-EMBEDDINGS_REGION = PARAMETER_VALUE["EMBEDDINGS_REGION"]
+LLM_MODEL_ID = PARAMETER_VALUE["LLM_MODEL_ID"]
+LLM_REGION = PARAMETER_VALUE["LLM_REGION"]
+LLM_MAX_TOKENS = int(PARAMETER_VALUE["LLM_MAX_TOKENS"])
 
 logger = custom_logger(__name__, owner=OWNER, service=PROJECT_NAME)
 
 # Inicialización de recursos
-bedrock_helper = BedrockHelper(region_name=CHATBOT_REGION)
+bedrock_helper = BedrockHelper(region_name=LLM_REGION)
 
 FEEDBACK_PROMPT = """
 ## Resumen de la tarea:
@@ -62,7 +58,7 @@ DEBES redactar una retroalimentación final en un solo párrafo, de forma DIRECT
 - MANTÉN un estilo académico, claro y conciso.
 """
 
-def get_converse_response(prompt: str, max_tokens: int, temperature: float = 1.0) -> dict:
+def _invoke_prompt(prompt: str, max_tokens: int, temperature: float = 1.0) -> dict:
     """
     Conversa con el modelo de Bedrock usando un prompt de sistema separado y mensajes estructurados.
     
@@ -72,8 +68,6 @@ def get_converse_response(prompt: str, max_tokens: int, temperature: float = 1.0
     - temperature: control de aleatoriedad
     """
 
-    logger.info(json.dumps(prompt, indent=2))
-
     parameters = {
         "max_tokens": max_tokens,
         "temperature": temperature,
@@ -81,10 +75,11 @@ def get_converse_response(prompt: str, max_tokens: int, temperature: float = 1.0
     }
 
     response = bedrock_helper.converse(
-        model=CHATBOT_MODEL_ID,
+        model=LLM_MODEL_ID,
         messages=[{"role": "user", "content": [{"text": prompt}]}],
         parameters=parameters
     )
+    logger.info(f"Respuesta del modelo: {response}")
 
     return response
 
@@ -135,7 +130,7 @@ def lambda_handler(event, context):
             feedback=', '.join(feedback),
             temas_formateados=', '.join(temas)
         )
-        response = get_converse_response(prompt=prompt, max_tokens=CHATBOT_LLM_MAX_TOKENS, temperature=0.5)
+        response = _invoke_prompt(prompt=prompt, max_tokens=LLM_MAX_TOKENS, temperature=0.5)
         feedback_response = response['output']['message']['content'][0]['text']
         input_tokens = response['usage']['inputTokens']
         output_tokens = response['usage']['outputTokens']

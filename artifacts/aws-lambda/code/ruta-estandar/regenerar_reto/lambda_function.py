@@ -1,15 +1,16 @@
 import json
 import os
-import boto3
 import re
-from boto3.dynamodb.conditions import Attr
 from datetime import datetime, timedelta
+
+import boto3
 from aje_libs.common.helpers.bedrock_helper import BedrockHelper
 from aje_libs.common.helpers.dynamodb_helper import DynamoDBHelper
 from aje_libs.common.helpers.s3_helper import S3Helper
 from aje_libs.common.helpers.secrets_helper import SecretsHelper
 from aje_libs.common.helpers.ssm_helper import SSMParameterHelper
 from aje_libs.common.logger import custom_logger
+from boto3.dynamodb.conditions import Attr
 
 # Configuración
 ENVIRONMENT = os.environ["ENVIRONMENT"]
@@ -20,14 +21,9 @@ DYNAMO_REGENERATED_HISTORY_TABLE = os.environ["DYNAMO_REGENERATED_CHALLENGES_HIS
 # Parameter Store
 ssm_agent = SSMParameterHelper(f"/{ENVIRONMENT}/{PROJECT_NAME}/agent")
 PARAMETER_VALUE = json.loads(ssm_agent.get_parameter_value())
-CHATBOT_MODEL_ID = PARAMETER_VALUE["CHATBOT_MODEL_ID"]
-CHATBOT_REGION = PARAMETER_VALUE["CHATBOT_REGION"]
-CHATBOT_LLM_MAX_TOKENS = int(PARAMETER_VALUE["CHATBOT_LLM_MAX_TOKENS"])
-CHATBOT_HISTORY_ELEMENTS = int(PARAMETER_VALUE["CHATBOT_HISTORY_ELEMENTS"])
-PINECONE_MAX_RETRIEVE_DOCUMENTS = int(PARAMETER_VALUE["PINECONE_MAX_RETRIEVE_DOCUMENTS"])
-PINECONE_MIN_THRESHOLD = float(PARAMETER_VALUE["PINECONE_MIN_THRESHOLD"])
-EMBEDDINGS_MODEL_ID = PARAMETER_VALUE["EMBEDDINGS_MODEL_ID"]
-EMBEDDINGS_REGION = PARAMETER_VALUE["EMBEDDINGS_REGION"]
+LLM_MODEL_ID = PARAMETER_VALUE["LLM_MODEL_ID"]
+LLM_REGION = PARAMETER_VALUE["LLM_REGION"]
+LLM_MAX_TOKENS = int(PARAMETER_VALUE["LLM_MAX_TOKENS"])
 
 logger = custom_logger(__name__, owner=OWNER, service=PROJECT_NAME)
 
@@ -38,7 +34,7 @@ regenerated_table_helper = DynamoDBHelper(
     sk_name="date_time"
 )
 
-bedrock_helper = BedrockHelper(region_name=CHATBOT_REGION)
+bedrock_helper = BedrockHelper(region_name=LLM_REGION)
 
 REGENERAR_RETO_PROMPT_SIN_INDICACIONES = '''
     Eres un experto en pedagogía y en el curso {nombre_curso}. Tu tarea es generar un reto de aprendizaje siguiendo exactamente este formato:
@@ -84,7 +80,7 @@ REGENERAR_RETO_PROMPT_BY_INDICACIONES = '''
     Asegúrate de generar un reto centrado en uno o varios de los temas clave proporcionados. Utiliza un lenguaje claro, técnico y directo. ¡Responde con la mayor precisión posible!
 '''
 
-def get_converse_response(prompt: str, max_tokens: int, temperature: float = 1.0) -> dict:
+def _invoke_prompt(prompt: str, max_tokens: int, temperature: float = 1.0) -> dict:
     """
     Conversa con el modelo de Bedrock usando un prompt de sistema separado y mensajes estructurados.
     
@@ -94,8 +90,6 @@ def get_converse_response(prompt: str, max_tokens: int, temperature: float = 1.0
     - temperature: control de aleatoriedad
     """
 
-    logger.info(json.dumps(prompt, indent=2))
-
     parameters = {
         "max_tokens": max_tokens,
         "temperature": temperature,
@@ -103,14 +97,15 @@ def get_converse_response(prompt: str, max_tokens: int, temperature: float = 1.0
     }
 
     response = bedrock_helper.converse(
-        model=CHATBOT_MODEL_ID,
+        model=LLM_MODEL_ID,
         messages=[{"role": "user", "content": [{"text": prompt}]}],
         parameters=parameters
     )
+    logger.info(f"Respuesta del modelo: {response}")
 
     return response
 
-def upload_reto(usuario_id: int, silabo_id: int, unidad_id: int, sesion_id: int, indicaciones: str, prompt_msg: str, ai_msg: str, input_tokens: int, output_tokens: int):
+def _upload_reto(usuario_id: int, silabo_id: int, unidad_id: int, sesion_id: int, indicaciones: str, prompt_msg: str, ai_msg: str, input_tokens: int, output_tokens: int):
     """
     Sube un reto a la tabla DynamoDB con los datos especificados.
     """
@@ -187,13 +182,13 @@ def lambda_handler(event, context):
             indicaciones = indicaciones
         )
 
-        response = get_converse_response(prompt = prompt, max_tokens=CHATBOT_LLM_MAX_TOKENS, temperature=0.7)
+        response = _invoke_prompt(prompt = prompt, max_tokens=LLM_MAX_TOKENS, temperature=0.7)
         regenerated_challenge = response['output']['message']['content'][0]['text']
         input_tokens = response['usage']['inputTokens']
         output_tokens = response['usage']['outputTokens']
 
         # Guardar en historial
-        upload_reto(
+        _upload_reto(
             usuario_id=user_id,
             silabo_id=syllabus_event_id,
             unidad_id=unidad_id,

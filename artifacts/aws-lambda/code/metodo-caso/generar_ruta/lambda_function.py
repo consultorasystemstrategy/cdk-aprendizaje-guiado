@@ -22,9 +22,9 @@ DYNAMO_LEARNING_PATH_HISTORY_TABLE = os.environ["DYNAMO_LEARNING_PATH_HISTORY_TA
 # Parameter Store
 ssm_agent = SSMParameterHelper(f"/{ENVIRONMENT}/{PROJECT_NAME}/agent")
 PARAMETER_VALUE = json.loads(ssm_agent.get_parameter_value())
-CHATBOT_MODEL_ID = PARAMETER_VALUE["CHATBOT_MODEL_ID"]
-CHATBOT_REGION = PARAMETER_VALUE["CHATBOT_REGION"]
-CHATBOT_LLM_MAX_TOKENS = int(PARAMETER_VALUE["CHATBOT_LLM_MAX_TOKENS"])
+LLM_MODEL_ID = PARAMETER_VALUE["LLM_MODEL_ID"]
+LLM_REGION = PARAMETER_VALUE["LLM_REGION"]
+LLM_MAX_TOKENS = int(PARAMETER_VALUE["LLM_MAX_TOKENS"])
 
 logger = custom_logger(__name__, owner=OWNER, service=PROJECT_NAME)
 
@@ -35,104 +35,9 @@ learning_path_table_helper = DynamoDBHelper(
     sk_name="date_time"
 )
 
-bedrock_helper = BedrockHelper(region_name=CHATBOT_REGION)
+bedrock_helper = BedrockHelper(region_name=LLM_REGION)
 
-'''
-RUTA_PROMPT = """
-    ## Tarea
-    Generar cinco retos formativos alineados con las etapas del análisis de casos individuales, utilizando el caso proporcionado y los datos curriculares. Cada reto debe evaluar una habilidad específica por etapa, usando el caso como base y respetando la estructura detallada.
-
-    ## Formato obligatorio
-    Utilice exactamente el siguiente formato:
-
-    @Nombre: [Título general de la ruta, máximo 6 palabras. Incluya al menos una palabra clave de los temas clave.]
-
-    (Después, por cada reto:)
-
-    @Reto: [Título breve del desafío]  
-    @Contexto: [Máx. 60 palabras. Incluya actores, hechos o tensiones clave del caso. En el reto 5 debe incluir decisiones tomadas, actores clave y plazos.]  
-    @Pregunta: [Una sola línea con la pregunta principal contextualizada + subpregunta que aplique directamente uno de los temas clave listados en {temas_formateados}.]  
-    @Respuesta Modelo: [Respuesta clara, analítica y contextual.]  
-    @Conceptos Clave: [**Inicie con el mismo tema clave exacto usado en la subpregunta.** Luego, agregue otros conceptos o herramientas complementarias. Separe por comas y termine en punto.]
-
-    ## Ejemplo
-
-    @Nombre: Explorando patrones en lectura escolar  
-
-    @Reto: Diagnóstico del caos en datos  
-    @Contexto: La bibliotecaria enfrenta dificultades para extraer patrones. Los estudiantes notan que no hay estructura por género ni frecuencia.  
-    @Pregunta: ¿Qué evidencias indican que los datos están desorganizados? ¿Cómo podría aplicarse el modelado de un datamart para resolver esta situación?  
-    @Respuesta Modelo: La desorganización impide filtrar por género o frecuencia. Un datamart permitiría estructurar por dimensiones, facilitando análisis y toma de decisiones.  
-    @Conceptos Clave: Modelado de un datamart/datawarehouse, segmentación de datos, estructura dimensional.
-
-    ## Datos curriculares
-    - Competencia: {competencia}  
-    - Capacidad: {capacidad}  
-    - Criterio: {criterio}  
-    - Complejidad: {complejidad}
-
-    ### Temas Clave
-    {temas_formateados}
-
-    ### Caso:
-    {caso}
-
-    ## Instrucciones específicas
-
-    1. Inicie con un solo `@Nombre` general para toda la ruta.
-
-    2. Genere cinco retos, uno por cada etapa, usando el formato anterior.
-
-    3. Alinee cada reto con la habilidad evaluada por etapa:
-
-    - **Etapa 3 - Identificación del problema central**  
-    - **Etapa 4 - Análisis causal y diagnóstico**  
-    - **Etapa 5 - Generación de alternativas**  
-    - **Etapa 6 - Evaluación y selección**  
-    - **Etapa 7 - Plan de acción**
-
-    4. Nivel de complejidad:
-    - “Fácil” → Aplicación directa de conceptos.
-    - “Difícil” → Interpretación, integración, hipótesis y decisión bajo incertidumbre.
-
-    5. Evite repetir ideas o contextos entre retos.
-
-    6. Use lenguaje técnico, académico y directo.
-
-    7. Entregue los cinco retos juntos, sin explicaciones adicionales ni etiquetas nuevas.
-
-    8. Verifique que cada reto tenga **exactamente** estas secciones:  
-    `@Reto`, `@Contexto`, `@Pregunta`, `@Respuesta Modelo`, `@Conceptos Clave`.
-
-    9. **Trazabilidad obligatoria**:  
-    - La **subpregunta** debe exigir aplicar directamente un tema de `{temas_formateados}`.  
-    - Ese mismo tema debe aparecer como **primer concepto en `@Conceptos Clave`**, sin reformulaciones ni sinónimos.  
-    - Esto asegura la coherencia evaluativa entre la subpregunta y los conceptos que se espera que el estudiante aplique.
-"""
-
-SYSTEM_PROMPT2 = """
-Eres un asistente llamado {asistente_nombre} que puede ayudar al usuario con sus preguntas usando **únicamente información confiable**.
-
-Contexto del usuario:
-- Rol del usuario: {usuario_rol}
-- Nombre del usuario: {usuario_nombre}
-- Curso: {curso}
-- Institución: {institucion}
-
-Instrucciones del modelo:
-- Debe proporcionar una respuesta concisa a preguntas sencillas cuando la respuesta se encuentre directamente en los resultados
-  de búsqueda. Sin embargo, en el caso de preguntas de sí/no, proporcione algunos detalles.
-- Si la pregunta requiere un razonamiento complejo, debe buscar información relevante en los resultados de búsqueda y resumir la
-  respuesta basándose en dicha información mediante un razonamiento lógico.
-- Si los resultados de búsqueda no contienen información que pueda responder a la pregunta, indique que no pudo encontrar una
-  respuesta exacta. Si los resultados de búsqueda son completamente irrelevantes, indique que no pudo encontrar una respuesta exacta y resuma los resultados.
-- **NO uses información externa que no esté en los resultados de búsqueda**, excepto para dar explicaciones conceptuales generales del curso **{curso}**.
-- **NO inventes información** ni generes contenido fuera del ámbito educativo salvo que el usuario lo solicite explícitamente.
-- Mantén **siempre un tono formal, claro y enfocado al ámbito académico**.
-"""
-'''
-
-def invoke_prompt(prompt: str, max_tokens: int, temperature: float = 1.0) -> dict:
+def _invoke_prompt(prompt: str, max_tokens: int, temperature: float = 1.0) -> dict:
     """
     Conversa con el modelo de Bedrock usando un prompt.
     
@@ -150,7 +55,7 @@ def invoke_prompt(prompt: str, max_tokens: int, temperature: float = 1.0) -> dic
     }
 
     response = bedrock_helper.converse(
-        model=CHATBOT_MODEL_ID,
+        model=LLM_MODEL_ID,
         messages=[{"role": "user", "content": [{"text": prompt}]}],
         parameters=parameters
     )
@@ -158,7 +63,7 @@ def invoke_prompt(prompt: str, max_tokens: int, temperature: float = 1.0) -> dic
 
     return response
 
-def upload_ruta(plantilla_id: int, usuario_id: int, silabo_id: int, unidad_id: int, sesion_id: int, prompt_msg: str, ai_msg: str, input_tokens: int, output_tokens: int):
+def _upload_ruta(plantilla_id: int, usuario_id: int, silabo_id: int, unidad_id: int, sesion_id: int, prompt_msg: str, ai_msg: str, input_tokens: int, output_tokens: int):
     """
     Sube una ruta a la tabla DynamoDB con los datos especificados.
     """
@@ -251,12 +156,12 @@ def lambda_handler(event, context):
                 caso=caso
             )
 
-        response = invoke_prompt(prompt=prompt, max_tokens=CHATBOT_LLM_MAX_TOKENS, temperature=0.7)
+        response = _invoke_prompt(prompt=prompt, max_tokens=LLM_MAX_TOKENS, temperature=0.7)
         learning_path = response['output']['message']['content'][0]['text']
         input_tokens = response['usage']['inputTokens']
         output_tokens = response['usage']['outputTokens']
 
-        upload_ruta(
+        _upload_ruta(
             plantilla_id=plantilla_id,
             usuario_id=user_id,
             silabo_id=syllabus_event_id,

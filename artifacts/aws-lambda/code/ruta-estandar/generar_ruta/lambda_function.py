@@ -1,8 +1,8 @@
 import json
 import os
 import re
-from boto3.dynamodb.conditions import Key, Attr
 from datetime import datetime, timedelta
+
 from aje_libs.bd.helpers.pinecone_helper import PineconeHelper
 from aje_libs.common.helpers.bedrock_helper import BedrockHelper
 from aje_libs.common.helpers.dynamodb_helper import DynamoDBHelper
@@ -10,6 +10,7 @@ from aje_libs.common.helpers.s3_helper import S3Helper
 from aje_libs.common.helpers.secrets_helper import SecretsHelper
 from aje_libs.common.helpers.ssm_helper import SSMParameterHelper
 from aje_libs.common.logger import custom_logger
+from boto3.dynamodb.conditions import Attr, Key
 
 # Configuración
 ENVIRONMENT = os.environ["ENVIRONMENT"]
@@ -20,18 +21,16 @@ DYNAMO_LEARNING_PATH_HISTORY_TABLE = os.environ["DYNAMO_LEARNING_PATH_HISTORY_TA
 # Parameter Store
 ssm_agent = SSMParameterHelper(f"/{ENVIRONMENT}/{PROJECT_NAME}/agent")
 PARAMETER_VALUE = json.loads(ssm_agent.get_parameter_value())
-CHATBOT_MODEL_ID = PARAMETER_VALUE["CHATBOT_MODEL_ID"]
-CHATBOT_REGION = PARAMETER_VALUE["CHATBOT_REGION"]
-CHATBOT_LLM_MAX_TOKENS = int(PARAMETER_VALUE["CHATBOT_LLM_MAX_TOKENS"])
-CHATBOT_HISTORY_ELEMENTS = int(PARAMETER_VALUE["CHATBOT_HISTORY_ELEMENTS"])
+EMBEDDING_MODEL_ID = PARAMETER_VALUE["EMBEDDING_MODEL_ID"]
+EMBEDDING_REGION = PARAMETER_VALUE["EMBEDDING_REGION"]
+LLM_MODEL_ID = PARAMETER_VALUE["LLM_MODEL_ID"]
+LLM_REGION = PARAMETER_VALUE["LLM_REGION"]
+LLM_MAX_TOKENS = int(PARAMETER_VALUE["LLM_MAX_TOKENS"])
 PINECONE_MAX_RETRIEVE_DOCUMENTS = int(PARAMETER_VALUE["PINECONE_MAX_RETRIEVE_DOCUMENTS"])
 PINECONE_MIN_THRESHOLD = float(PARAMETER_VALUE["PINECONE_MIN_THRESHOLD"])
-EMBEDDINGS_MODEL_ID = PARAMETER_VALUE["EMBEDDINGS_MODEL_ID"]
-EMBEDDINGS_REGION = PARAMETER_VALUE["EMBEDDINGS_REGION"]
 
 # Secrets
 secret_pinecone = SecretsHelper(f"{ENVIRONMENT}/{PROJECT_NAME}/pinecone-api")
-#secret_pinecone = SecretsHelper(f"{ENVIRONMENT}/agent-resources/pinecone-api-key")
 PINECONE_INDEX_NAME = secret_pinecone.get_secret_value("PINECONE_INDEX_NAME")
 PINECONE_API_KEY = secret_pinecone.get_secret_value("PINECONE_API_KEY")
 
@@ -47,13 +46,13 @@ learning_path_table_helper = DynamoDBHelper(
 pinecone_helper = PineconeHelper(
     index_name=PINECONE_INDEX_NAME,
     api_key=PINECONE_API_KEY,
-    embeddings_model_id=EMBEDDINGS_MODEL_ID,
-    embeddings_region=CHATBOT_REGION,
+    embeddings_model_id=EMBEDDING_MODEL_ID,
+    embeddings_region=EMBEDDING_REGION,
     max_retrieve_documents=PINECONE_MAX_RETRIEVE_DOCUMENTS,
     min_threshold=PINECONE_MIN_THRESHOLD
 )
 
-bedrock_helper = BedrockHelper(region_name=CHATBOT_REGION)
+bedrock_helper = BedrockHelper(region_name=LLM_REGION)
 
 RUTA_PROMPT = """
     ### Instrucción
@@ -107,7 +106,7 @@ Instrucciones del modelo:
 - Mantén **siempre un tono formal, claro y enfocado al ámbito académico**.
 """
 
-def get_converse_response(prompt: str, max_tokens: int, temperature: float = 1.0) -> dict:
+def _invoke_prompt(prompt: str, max_tokens: int, temperature: float = 1.0) -> dict:
     """
     Conversa con el modelo de Bedrock usando un prompt de sistema separado y mensajes estructurados.
     
@@ -117,8 +116,6 @@ def get_converse_response(prompt: str, max_tokens: int, temperature: float = 1.0
     - temperature: control de aleatoriedad
     """
 
-    logger.info(json.dumps(prompt, indent=2))
-
     parameters = {
         "max_tokens": max_tokens,
         "temperature": temperature,
@@ -126,14 +123,15 @@ def get_converse_response(prompt: str, max_tokens: int, temperature: float = 1.0
     }
 
     response = bedrock_helper.converse(
-        model=CHATBOT_MODEL_ID,
+        model=LLM_MODEL_ID,
         messages=[{"role": "user", "content": [{"text": prompt}]}],
         parameters=parameters
     )
+    logger.info(f"Respuesta del modelo: {response}")
 
     return response
 
-def upload_ruta(usuario_id: int, silabo_id: int, unidad_id: int, sesion_id: int, prompt_msg: str, ai_msg: str, input_tokens: int, output_tokens: int):
+def _upload_ruta(usuario_id: int, silabo_id: int, unidad_id: int, sesion_id: int, prompt_msg: str, ai_msg: str, input_tokens: int, output_tokens: int):
     """
     Sube una ruta a la tabla DynamoDB con los datos especificados.
     """
@@ -163,7 +161,7 @@ def upload_ruta(usuario_id: int, silabo_id: int, unidad_id: int, sesion_id: int,
     except Exception as e:
         logger.error(f"Error al subir el elemento: {e}")
 
-def get_documents_context(question, data=None):
+def _get_documents_context(question, data=None):
     """
     Obtiene contexto relevante para una pregunta usando PineconeHelper.
     """
@@ -192,7 +190,7 @@ def get_documents_context(question, data=None):
         logger.error(f"Error al obtener el contexto de documentos: {e}")
         return ""
     
-def retrieve_context(query_text, resources):
+def _retrieve_context(query_text, resources):
     # Obtener recursos
     if resources:
         if isinstance(resources, str):
@@ -204,7 +202,7 @@ def retrieve_context(query_text, resources):
         return "No se cuenta con material documental. Genera los retos únicamente con base en tu conocimiento general sobre el tema."
 
     # Consultar Pinecone
-    text_context = get_documents_context(query_text, data)
+    text_context = _get_documents_context(query_text, data)
     return text_context
 
 def lambda_handler(event, context):
@@ -246,7 +244,7 @@ def lambda_handler(event, context):
         )
         logger.info(f"Query_text: {query_text}")
 
-        pinecone_context = retrieve_context(query_text, resources)
+        pinecone_context = _retrieve_context(query_text, resources)
         
         # Armar el prompt
         prompt = RUTA_PROMPT.format(
@@ -260,12 +258,12 @@ def lambda_handler(event, context):
         )
         logger.info(f"Ruta prompt: {prompt}")
 
-        response = get_converse_response(prompt=prompt, max_tokens=CHATBOT_LLM_MAX_TOKENS, temperature=0.7)
+        response = _invoke_prompt(prompt=prompt, max_tokens=LLM_MAX_TOKENS, temperature=0.7)
         learning_path = response['output']['message']['content'][0]['text']
         input_tokens = response['usage']['inputTokens']
         output_tokens = response['usage']['outputTokens']
 
-        upload_ruta(
+        _upload_ruta(
             usuario_id=user_id,
             silabo_id=syllabus_event_id,
             unidad_id=unidad_id,

@@ -1,17 +1,19 @@
 import json
 import os
 import re
-from boto3.dynamodb.conditions import Key, Attr
 from datetime import datetime, timedelta
-from .prompts.estrategico_prompt import CASO_ESTRATEGICO_PROMPT
-from .prompts.abp_prompt import ABP_PROMPT
-from .prompts.clinico_psicologia_prompt import CLINICO_PSICOLOGIA_PROMPT
+
 from aje_libs.common.helpers.bedrock_helper import BedrockHelper
 from aje_libs.common.helpers.dynamodb_helper import DynamoDBHelper
 from aje_libs.common.helpers.s3_helper import S3Helper
 from aje_libs.common.helpers.secrets_helper import SecretsHelper
 from aje_libs.common.helpers.ssm_helper import SSMParameterHelper
 from aje_libs.common.logger import custom_logger
+from boto3.dynamodb.conditions import Attr, Key
+
+from .prompts.abp_prompt import ABP_PROMPT
+from .prompts.clinico_psicologia_prompt import CLINICO_PSICOLOGIA_PROMPT
+from .prompts.estrategico_prompt import CASO_ESTRATEGICO_PROMPT
 
 # Configuración
 ENVIRONMENT = os.environ["ENVIRONMENT"]
@@ -22,9 +24,9 @@ DYNAMO_CASE_HISTORY_TABLE = os.environ["DYNAMO_CASE_HISTORY_TABLE"]
 # Parameter Store
 ssm_agent = SSMParameterHelper(f"/{ENVIRONMENT}/{PROJECT_NAME}/agent")
 PARAMETER_VALUE = json.loads(ssm_agent.get_parameter_value())
-CHATBOT_MODEL_ID = PARAMETER_VALUE["CHATBOT_MODEL_ID"]
-CHATBOT_REGION = PARAMETER_VALUE["CHATBOT_REGION"]
-CHATBOT_LLM_MAX_TOKENS = int(PARAMETER_VALUE["CHATBOT_LLM_MAX_TOKENS"])
+LLM_MODEL_ID = PARAMETER_VALUE["LLM_MODEL_ID"]
+LLM_REGION = PARAMETER_VALUE["LLM_REGION"]
+LLM_MAX_TOKENS = int(PARAMETER_VALUE["LLM_MAX_TOKENS"])
 
 logger = custom_logger(__name__, owner=OWNER, service=PROJECT_NAME)
 
@@ -35,117 +37,9 @@ case_history_table_helper = DynamoDBHelper(
     sk_name="date_time"
 )
 
-bedrock_helper = BedrockHelper(region_name=CHATBOT_REGION)
+bedrock_helper = BedrockHelper(region_name=LLM_REGION)
 
-'''
-CASO_ESCOLAR_PROMPT = """
-    ## Tarea
-    Escribe un caso breve para estudiantes de nivel primaria. El caso debe ser claro, cercano y sin soluciones ni juicios.
-
-    ## Instrucciones
-    1. Si el usuario ha proporcionado un texto base, utilízalo para identificar los siguientes elementos:
-        - Nombre de la institución o empresa ficticia y su entorno (escuela, comunidad, emprendimiento)
-        - Dilema o problema principal que pueda comprender un estudiante de primaria
-        - Propósito o misión que guíe a los personajes
-        - Otros datos relevantes para construir el caso
-
-    2. Si no se ha proporcionado ningún texto base, **genera un caso original** relacionado con los datos curriculares proporcionados (curso, competencia, capacidad, criterio, nivel de complejidad y temas clave).
-
-    3. Ajusta el nivel de detalle, el lenguaje y el dilema según el nivel de complejidad especificado ({complejidad}), manteniendo una narrativa comprensible y motivadora para estudiantes de primaria.
-
-    4. El dilema debe girar en torno a los temas clave ({temas_formateados}) e implicar la competencia, capacidad y criterio proporcionados, sin nombrarlos explícitamente.
-
-    5. El caso debe cubrir los siguientes aspectos mediante el análisis:
-        - Identificación del problema
-        - Análisis de causas
-        - Alternativas posibles
-        - Diseño de una solución o plan de acción
-
-    6. Incluye los siguientes elementos:
-        - 2-3 personajes (niños, docentes, familiares u otros) con perspectivas distintas
-        - Datos simples y concretos (números, ejemplos, frases de los personajes, emociones, situaciones)
-        - 2-3 alternativas relacionadas con los temas clave, explicando sus ventajas, desventajas y posibles consecuencias
-        - Información mínima para actuar: qué hacen, dónde están, qué recursos tienen, qué tiempos manejan
-
-    7. No incluir nota didáctica ni cierre instructivo.
-
-    ## Datos curriculares
-    - Curso: {nombre_curso}
-    - Competencia: {competencia}
-    - Capacidad: {capacidad}
-    - Criterio: {criterio}
-    - Complejidad: {complejidad}
-    - Temas clave: {temas_formateados}
-
-    ## Texto base del usuario (puede estar vacío)
-    {contexto}
-
-    ## Estructura esperada del caso
-    1. Título
-    2. Resumen
-    3. Contexto
-    4. Datos clave
-    5. Problema central
-    6. Personajes
-    7. Alternativas
-    8. Información operativa mínima
-"""
-
-CASO_AVANZADO_PROMPT = """
-    ## Tarea
-    Escribe un caso estratégico breve, al estilo Harvard/IESE, para análisis individual. El caso debe ser claro, profesional y sin soluciones ni juicios.
-
-    ## Instrucciones
-    1. Si el usuario ha proporcionado un texto base, utilízalo para identificar los siguientes elementos:
-        - Nombre de la empresa y sector
-        - Dilema o problema estratégico
-        - Misión o propósito institucional
-        - Otros datos relevantes para la construcción del caso
-
-    2. Si no se ha proporcionado ningún texto base, **genera un caso estratégico original** relacionado con los datos curriculares (curso, competencia, capacidad, criterio, nivel de complejidad y temas clave).
-
-    3. Ajusta el nivel de detalle, la complejidad del dilema y la profundidad del contexto según el nivel de complejidad especificado ({complejidad}).
-
-    4. El dilema debe girar en torno a los temas clave ({temas_formateados}) e implicar la competencia, capacidad y criterio proporcionados, sin nombrarlos explícitamente.
-
-    5. El caso debe cubrir los siguientes aspectos mediante el análisis:
-        - Identificación del problema
-        - Análisis causal
-        - Alternativas estratégicas
-        - Diseño del plan de acción
-
-    6. Incluye los siguientes elementos:
-        - 2-3 actores con perspectivas distintas
-        - Datos cuantitativos y cualitativos (cifras, indicadores, conflictos, citas)
-        - 2-3 alternativas estratégicas vinculadas a los temas clave, incluyendo ventajas, limitaciones, áreas y efectos
-        - Información operativa mínima: cargos, áreas, recursos y plazos
-
-    7. No incluir nota didáctica ni cierre instructivo.
-
-    ## Datos curriculares
-    - Curso: {nombre_curso}
-    - Competencia: {competencia}
-    - Capacidad: {capacidad}
-    - Criterio: {criterio}
-    - Complejidad: {complejidad}
-    - Temas clave: {temas_formateados}
-
-    ## Texto base del usuario (puede estar vacío)
-    {contexto}
-
-    ## Estructura esperada del caso
-    1. Título
-    2. Resumen
-    3. Contexto
-    4. Datos clave
-    5. Problema central
-    6. Actores
-    7. Alternativas estratégicas
-    8. Información operativa mínima
-"""
-'''
-
-def invoke_prompt(prompt: str, max_tokens: int, temperature: float = 1.0) -> dict:
+def _invoke_prompt(prompt: str, max_tokens: int, temperature: float = 1.0) -> dict:
     """
     Conversa con el modelo de Bedrock usando un prompt.
     
@@ -155,7 +49,6 @@ def invoke_prompt(prompt: str, max_tokens: int, temperature: float = 1.0) -> dic
     - temperature: control de aleatoriedad
     """
 
-    logger.info(f"Prompt enviado al modelo: {prompt}")
     parameters = {
         "max_tokens": max_tokens,
         "temperature": temperature,
@@ -163,7 +56,7 @@ def invoke_prompt(prompt: str, max_tokens: int, temperature: float = 1.0) -> dic
     }
 
     response = bedrock_helper.converse(
-        model=CHATBOT_MODEL_ID,
+        model=LLM_MODEL_ID,
         messages=[{"role": "user", "content": [{"text": prompt}]}],
         parameters=parameters
     )
@@ -171,7 +64,7 @@ def invoke_prompt(prompt: str, max_tokens: int, temperature: float = 1.0) -> dic
 
     return response
 
-def upload_caso(plantilla_id: int, usuario_id: int, silabo_id: int, unidad_id: int, sesion_id: int, prompt_msg: str, ai_msg: str, input_tokens: int, output_tokens: int):
+def _upload_caso(plantilla_id: int, usuario_id: int, silabo_id: int, unidad_id: int, sesion_id: int, prompt_msg: str, ai_msg: str, input_tokens: int, output_tokens: int):
     """
     Sube un caso a la tabla DynamoDB con los datos especificados.
     """
@@ -267,13 +160,13 @@ def lambda_handler(event, context):
                 temas_formateados=', '.join(temas),
             )
 
-        response = invoke_prompt(prompt=prompt, max_tokens=CHATBOT_LLM_MAX_TOKENS, temperature=0.7)
+        response = _invoke_prompt(prompt=prompt, max_tokens=LLM_MAX_TOKENS, temperature=0.7)
         case = response['output']['message']['content'][0]['text']
         input_tokens = response['usage']['inputTokens']
         output_tokens = response['usage']['outputTokens']
 
         # Guardar en historial
-        upload_caso(
+        _upload_caso(
             plantilla_id=plantilla_id,
             usuario_id=user_id,
             silabo_id=syllabus_event_id,

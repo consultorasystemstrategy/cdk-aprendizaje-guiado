@@ -1,15 +1,16 @@
 import json
 import os
-import boto3
 import re
-from boto3.dynamodb.conditions import Attr
 from datetime import datetime, timedelta
+
+import boto3
 from aje_libs.common.helpers.bedrock_helper import BedrockHelper
 from aje_libs.common.helpers.dynamodb_helper import DynamoDBHelper
 from aje_libs.common.helpers.s3_helper import S3Helper
 from aje_libs.common.helpers.secrets_helper import SecretsHelper
 from aje_libs.common.helpers.ssm_helper import SSMParameterHelper
 from aje_libs.common.logger import custom_logger
+from boto3.dynamodb.conditions import Attr
 
 # Configuración
 ENVIRONMENT = os.environ["ENVIRONMENT"]
@@ -20,14 +21,9 @@ DYNAMO_EVALUATION_HISTORY_TABLE = os.environ["DYNAMO_EVALUATION_HISTORY_TABLE"]
 # Parameter Store
 ssm_agent = SSMParameterHelper(f"/{ENVIRONMENT}/{PROJECT_NAME}/agent")
 PARAMETER_VALUE = json.loads(ssm_agent.get_parameter_value())
-CHATBOT_MODEL_ID = PARAMETER_VALUE["CHATBOT_MODEL_ID"]
-CHATBOT_REGION = PARAMETER_VALUE["CHATBOT_REGION"]
-CHATBOT_LLM_MAX_TOKENS = int(PARAMETER_VALUE["CHATBOT_LLM_MAX_TOKENS"])
-CHATBOT_HISTORY_ELEMENTS = int(PARAMETER_VALUE["CHATBOT_HISTORY_ELEMENTS"])
-PINECONE_MAX_RETRIEVE_DOCUMENTS = int(PARAMETER_VALUE["PINECONE_MAX_RETRIEVE_DOCUMENTS"])
-PINECONE_MIN_THRESHOLD = float(PARAMETER_VALUE["PINECONE_MIN_THRESHOLD"])
-EMBEDDINGS_MODEL_ID = PARAMETER_VALUE["EMBEDDINGS_MODEL_ID"]
-EMBEDDINGS_REGION = PARAMETER_VALUE["EMBEDDINGS_REGION"]
+LLM_MODEL_ID = PARAMETER_VALUE["LLM_MODEL_ID"]
+LLM_REGION = PARAMETER_VALUE["LLM_REGION"]
+LLM_MAX_TOKENS = int(PARAMETER_VALUE["LLM_MAX_TOKENS"])
 
 logger = custom_logger(__name__, owner=OWNER, service=PROJECT_NAME)
 
@@ -38,7 +34,7 @@ evaluation_table_helper = DynamoDBHelper(
     sk_name="date_time"
 )
 
-bedrock_helper = BedrockHelper(region_name=CHATBOT_REGION)
+bedrock_helper = BedrockHelper(region_name=LLM_REGION)
 
 SCORE_PROMPT = """
     Eres un experto evaluador académico en {nombre_curso}. Tu tarea es asignar un puntaje objetivo entre 0.0 y 1.0 a la respuesta de un estudiante, comparándola con una respuesta modelo, según los siguientes criterios académicos. Debes tener en cuenta también el **contexto** en el que se formula la pregunta.
@@ -181,7 +177,7 @@ Temas clave esperados:
 - Responde ÚNICAMENTE el número, con dos decimales.
 """
 
-def get_converse_response(prompt: str, max_tokens: int, temperature: float = 1.0) -> dict:
+def _invoke_prompt(prompt: str, max_tokens: int, temperature: float = 1.0) -> dict:
     """
     Conversa con el modelo de Bedrock usando un prompt de sistema separado y mensajes estructurados.
     
@@ -191,8 +187,6 @@ def get_converse_response(prompt: str, max_tokens: int, temperature: float = 1.0
     - temperature: control de aleatoriedad
     """
 
-    logger.info(json.dumps(prompt, indent=2))
-
     parameters = {
         "max_tokens": max_tokens,
         "temperature": temperature,
@@ -200,14 +194,15 @@ def get_converse_response(prompt: str, max_tokens: int, temperature: float = 1.0
     }
 
     response = bedrock_helper.converse(
-        model=CHATBOT_MODEL_ID,
+        model=LLM_MODEL_ID,
         messages=[{"role": "user", "content": [{"text": prompt}]}],
         parameters=parameters
     )
+    logger.info(f"Respuesta del modelo: {response}")
 
     return response
 
-def upload_evaluar(reto_ejecucion_id: str, usuario_id: int, silabo_id: int, unidad_id: int, sesion_id: int, score: str, prompt_msg: str, ai_msg: str, input_tokens: int, output_tokens: int):
+def _upload_evaluar(reto_ejecucion_id: str, usuario_id: int, silabo_id: int, unidad_id: int, sesion_id: int, score: str, prompt_msg: str, ai_msg: str, input_tokens: int, output_tokens: int):
     """
     Sube una evaluación realizada a la tabla DynamoDB con los datos especificados.
     """
@@ -282,8 +277,8 @@ def lambda_handler(event, context):
             respuesta_modelo = respuesta_modelo,
             temas_formateados = ', '.join(temas)
         )
-        
-        response = get_converse_response(prompt=prompt, max_tokens=5, temperature=0.0)
+
+        response = _invoke_prompt(prompt=prompt, max_tokens=5, temperature=0.0)
         logger.info(f"Response Score from Bedrock: {response}")
         score_response = response['output']['message']['content'][0]['text']
 
@@ -317,12 +312,12 @@ def lambda_handler(event, context):
                     temas_formateados = ', '.join(temas)
                 )
 
-            response = get_converse_response(prompt = prompt, max_tokens=CHATBOT_LLM_MAX_TOKENS, temperature = 0.7)
+            response = _invoke_prompt(prompt = prompt, max_tokens=LLM_MAX_TOKENS, temperature = 0.7)
             feedback = response['output']['message']['content'][0]['text']
             input_tokens = response['usage']['inputTokens']
             output_tokens = response['usage']['outputTokens']
-        
-            upload_evaluar(
+
+            _upload_evaluar(
                 reto_ejecucion_id=reto_ejecucion_id,
                 usuario_id=user_id,
                 silabo_id=syllabus_event_id,
@@ -341,7 +336,7 @@ def lambda_handler(event, context):
             input_tokens = 0
             output_tokens = 0
 
-            upload_evaluar(
+            _upload_evaluar(
                 reto_ejecucion_id=reto_ejecucion_id,
                 usuario_id=user_id,
                 silabo_id=syllabus_event_id,
