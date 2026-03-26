@@ -36,33 +36,6 @@ evaluation_table_helper = DynamoDBHelper(
 
 bedrock_helper = BedrockHelper(region_name=LLM_REGION)
 
-SCORE_PROMPT = """
-    Eres un experto evaluador académico en {nombre_curso}. Tu tarea es asignar un puntaje objetivo entre 0.0 y 1.0 a la respuesta de un estudiante, comparándola con una respuesta modelo, según los siguientes criterios académicos.
-
-    Pregunta:
-    {pregunta}
-
-    Respuesta del estudiante:
-    {respuesta_usuario}
-
-    Respuesta modelo esperada:
-    {respuesta_modelo}
-
-    Temas clave esperados:
-    {temas_formateados}
-
-    Criterios de evaluación:
-    1. Precisión conceptual.
-    2. Cobertura de los puntos clave.
-    3. Claridad y coherencia.
-    4. Equivalencia semántica.
-    5. Relevancia respecto a los temas clave.
-
-    Formato de salida:
-    - Devuelve **solo** un número decimal entre 0.0 y 1.0 con dos decimales.
-    - **No agregues explicaciones, etiquetas, comentarios ni palabras adicionales.**
-"""
-
 # Prompt para lanzar una nueva pregunta y feedback cuando la respuesta es incorrecta
 FEEDBACK_ALL_PROMPT = """
 ## Resumen de la tarea:
@@ -125,7 +98,7 @@ DEBES redactar una retroalimentación breve y profesional para un estudiante que
 """
 
 # Prompt para evaluación de respuestas
-SCORE_PROMPT2 = """
+SCORE_PROMPT = """
 ## Resumen de la tarea:
 Eres un evaluador académico experto en el curso {nombre_curso}. Tu tarea es asignar un puntaje objetivo entre 0.0 y 1.0 a la respuesta de un estudiante, comparándola con una respuesta modelo, según criterios académicos establecidos.
 
@@ -169,29 +142,17 @@ Temas clave esperados:
 - Responde ÚNICAMENTE el número, con dos decimales.
 """
 
-def _invoke_prompt(prompt: str, max_tokens: int, temperature: float = 1.0) -> dict:
-    """
-    Conversa con el modelo de Bedrock usando un prompt de sistema separado y mensajes estructurados.
-    
-    Parámetros:
-    - prompt: texto con las instrucciones del prompt
-    - max_tokens: número máximo de tokens de respuesta
-    - temperature: control de aleatoriedad
-    """
-
-    parameters = {
-        "max_tokens": max_tokens,
-        "temperature": temperature,
-        "top_p": 0.2
-    }
-
+def _invoke_prompt(prompt: str, max_tokens: int, temperature: float = 0.0) -> dict:
     response = bedrock_helper.converse(
         model=LLM_MODEL_ID,
         messages=[{"role": "user", "content": [{"text": prompt}]}],
-        parameters=parameters
+        parameters={
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "top_p": 0.2
+        }
     )
     logger.info(f"Respuesta del modelo: {response}")
-
     return response
 
 def _upload_evaluar(reto_ejecucion_id: str, usuario_id: int, silabo_id: int, unidad_id: int, sesion_id: int, score: str, prompt_msg: str, ai_msg: str, input_tokens: int, output_tokens: int):
@@ -228,9 +189,10 @@ def _upload_evaluar(reto_ejecucion_id: str, usuario_id: int, silabo_id: int, uni
 
 def lambda_handler(event, context):
     try:
-        body = event.get('body', event)
-        if isinstance(body, str):
-            body = json.loads(body)
+        body = event.get("body")
+        if not body:
+            return {"statusCode": 400, "body": json.dumps({"success": False, "message": "Body requerido"})}
+        body = json.loads(body) if isinstance(body, str) else body
 
         required_fields = ["RetoEjecucionId", "UsuarioId", "SilaboId", "UnidadId", "SesionId", "NombreCurso", "Complejidad", "Pregunta", "RespuestaModelo", "RespuestaUsuario", "Temas", "Umbral"]
         missing_fields = [field for field in required_fields if field not in body]
@@ -239,11 +201,7 @@ def lambda_handler(event, context):
                 "statusCode": 400,
                 "body": json.dumps({
                     "success": False,
-                    "message": f"Campos requeridos faltantes: {missing_fields}",
-                    "error": {
-                        "code": "MISSING_FIELDS",
-                        "details": f"Campos requeridos faltantes: {missing_fields}"
-                    }
+                    "message": f"Campos requeridos faltantes: {missing_fields}"
                 })
             }
         
@@ -260,7 +218,7 @@ def lambda_handler(event, context):
         temas = body.get("Temas", None)
         umbral = body["Umbral"]
         
-        prompt = SCORE_PROMPT2.format(
+        prompt = SCORE_PROMPT.format(
             nombre_curso = nombre_curso,
             pregunta = pregunta,
             respuesta_usuario = respuesta_usuario,
@@ -268,8 +226,7 @@ def lambda_handler(event, context):
             temas_formateados = ', '.join(temas),
         )
 
-        response = _invoke_prompt(prompt=prompt, max_tokens=5, temperature=0.0)
-        logger.info(f"Response Score from Bedrock: {response}")
+        response = _invoke_prompt(prompt=prompt, max_tokens=5)
         score_response = response['output']['message']['content'][0]['text']
 
         # Intentar detectar el número sin etiqueta
@@ -300,7 +257,7 @@ def lambda_handler(event, context):
                     temas_formateados = ', '.join(temas),
                 )
 
-            response = _invoke_prompt(prompt = prompt, max_tokens=LLM_MAX_TOKENS, temperature = 0.7)
+            response = _invoke_prompt(prompt = prompt, max_tokens=LLM_MAX_TOKENS, temperature=0.7)
             feedback = response['output']['message']['content'][0]['text']
             input_tokens = response['usage']['inputTokens']
             output_tokens = response['usage']['outputTokens']

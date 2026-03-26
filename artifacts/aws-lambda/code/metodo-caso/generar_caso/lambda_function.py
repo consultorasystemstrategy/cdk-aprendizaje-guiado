@@ -39,29 +39,17 @@ case_history_table_helper = DynamoDBHelper(
 
 bedrock_helper = BedrockHelper(region_name=LLM_REGION)
 
-def _invoke_prompt(prompt: str, max_tokens: int, temperature: float = 1.0) -> dict:
-    """
-    Conversa con el modelo de Bedrock usando un prompt.
-    
-    Parámetros:
-    - prompt: texto con las instrucciones del prompt
-    - max_tokens: número máximo de tokens de respuesta
-    - temperature: control de aleatoriedad
-    """
-
-    parameters = {
-        "max_tokens": max_tokens,
-        "temperature": temperature,
-        "top_p": 0.8
-    }
-
+def _invoke_prompt(prompt: str, max_tokens: int, temperature: float = 0.0) -> dict:
     response = bedrock_helper.converse(
         model=LLM_MODEL_ID,
         messages=[{"role": "user", "content": [{"text": prompt}]}],
-        parameters=parameters
+        parameters={
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "top_p": 0.8
+        }
     )
     logger.info(f"Respuesta del modelo: {response}")
-
     return response
 
 def _upload_caso(plantilla_id: int, usuario_id: int, silabo_id: int, unidad_id: int, sesion_id: int, prompt_msg: str, ai_msg: str, input_tokens: int, output_tokens: int):
