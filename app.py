@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import os
 import aws_cdk as cdk
-from stacks.cdk_aprendizaje_guiado_stack import CdkAprendizajeGuiadoStack
+from stacks.cdk_agent_guided_stack import CdkAgentGuidedStack
 from aje_cdk_libs.constants.environments import Environments
 from aje_cdk_libs.constants.project_config import ProjectConfig
 from dotenv import load_dotenv
@@ -16,9 +16,9 @@ CONFIG["environment"] = os.getenv("ENVIRONMENT", None)
 CONFIG["separator"] = os.getenv("SEPARATOR", "-") 
 project_config = ProjectConfig.from_dict(CONFIG)
       
-CdkAprendizajeGuiadoStack(
+CdkAgentGuidedStack(
     app, 
-    "CdkAprendizajeGuiadoStack",
+    "CdkAgentGuidedUpeuStack",
     project_config,
     env=cdk.Environment(
         account=project_config.account_id,

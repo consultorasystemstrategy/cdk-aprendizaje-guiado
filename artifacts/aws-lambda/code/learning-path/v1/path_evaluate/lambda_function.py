@@ -1,0 +1,315 @@
+import json
+import os
+import re
+from datetime import datetime, timedelta
+
+import boto3
+from aje_libs.common.helpers.bedrock_helper import BedrockHelper
+from aje_libs.common.helpers.dynamodb_helper import DynamoDBHelper
+from aje_libs.common.helpers.ssm_helper import SSMParameterHelper
+from aje_libs.common.logger import custom_logger
+from boto3.dynamodb.conditions import Attr
+
+# Configuración
+ENVIRONMENT = os.environ["ENVIRONMENT"]
+ENTERPRISE = os.environ["ENTERPRISE"]
+PROJECT_NAME = os.environ["PROJECT_NAME"]
+OWNER = os.environ["OWNER"]
+EVALUATION_HISTORY_TABLE = os.environ["EVALUATION_HISTORY_TABLE"]
+
+# Parameter Store
+ssm_agent = SSMParameterHelper(f"/{ENVIRONMENT}/{PROJECT_NAME}/{ENTERPRISE}/agent")
+PARAMETER_VALUE = json.loads(ssm_agent.get_parameter_value())
+LLM_MODEL_ID = PARAMETER_VALUE["LLM_MODEL_ID"]
+LLM_REGION = PARAMETER_VALUE["LLM_REGION"]
+LLM_MAX_TOKENS = int(PARAMETER_VALUE["LLM_MAX_TOKENS"])
+
+logger = custom_logger(__name__, owner=OWNER, service=PROJECT_NAME)
+
+# Inicializar DynamoDBHelper
+evaluation_table_helper = DynamoDBHelper(
+    table_name=EVALUATION_HISTORY_TABLE,
+    pk_name="usuario_id",
+    sk_name="date_time"
+)
+
+bedrock_helper = BedrockHelper(region_name=LLM_REGION)
+
+# Prompt para lanzar una nueva pregunta y feedback cuando la respuesta es incorrecta
+FEEDBACK_ALL_PROMPT = """
+## Resumen de la tarea:
+DEBES generar retroalimentación y una nueva oportunidad de aprendizaje para un estudiante que no respondió correctamente una pregunta de evaluación.
+
+## Información de contexto:
+- Curso: {nombre_curso}
+- Nivel de complejidad: {complejidad}
+- Pregunta original: {pregunta}
+- Respuesta modelo esperada: {respuesta_modelo}
+- Tu respuesta: {respuesta_usuario}
+- Temas clave implicados: {temas_formateados}
+
+## Instrucciones para el modelo:
+1. REDACTA una retroalimentación breve en un máximo de 3 líneas, dirigida en segunda persona del singular (tú), aclarando errores, omisiones o confusiones.
+   - Si tu respuesta fue parcialmente correcta, explica lo que te faltó o interpretaste mal.
+   - Si no evidenciaste comprensión, explica lo esencial del concepto evaluado.
+
+2. FORMULA una nueva pregunta, distinta de la original:
+   - Si tu error fue parcial, mantén la complejidad pero cambia el enfoque para reforzar lo omitido.
+   - Si no demostraste comprensión, reduce ligeramente la complejidad e incluye los conceptos clave omitidos.
+
+3. REDACTA una respuesta modelo clara y precisa alineada con la nueva pregunta.
+
+4. ACTUALIZA la lista de conceptos clave en función de la nueva pregunta.
+
+## Estilo y formato de la respuesta:
+- Devuelve SIEMPRE el resultado con el siguiente formato:
+  @Feedback: [Retroalimentación breve en segunda persona]
+  @Pregunta: [Nueva pregunta reformulada]
+  @Respuesta Modelo: [Nueva respuesta modelo]
+  @Conceptos Claves: [Lista de conceptos clave separados por comas y terminados en punto]
+"""
+
+# Prompt para feedback cuando la respuesta es correcta
+FEEDBACK_PROMPT = """
+## Resumen de la tarea:
+DEBES redactar una retroalimentación breve y profesional para un estudiante que ha respondido correctamente una pregunta de evaluación.
+
+## Información de contexto:
+- Curso: {nombre_curso}
+- Nivel de complejidad: {complejidad}
+- Pregunta original: {pregunta}
+- Respuesta modelo esperada: {respuesta_modelo}
+- Tu respuesta: {respuesta_usuario}
+- Temas clave implicados: {temas_formateados}
+
+## Instrucciones para el modelo:
+- REDACTA la retroalimentación en segunda persona del singular (tú).  
+- RECONOCE de manera directa qué concepto o proceso has comprendido correctamente.  
+- INCLUYE una sugerencia concreta y moderada para seguir profundizando o aplicando lo aprendido.  
+- MANTÉN un estilo académico, sobrio y orientado al acompañamiento.  
+- NO UTILICES signos de exclamación ni expresiones emotivas o coloquiales.  
+- LIMÍTATE a un máximo de 3 líneas en un solo párrafo.  
+
+## Estilo y formato de la respuesta:
+- Devuelve SIEMPRE el resultado con el siguiente formato:  
+
+@Feedback: [Escribe aquí la retroalimentación en segunda persona]
+"""
+
+# Prompt para evaluación de respuestas
+SCORE_PROMPT = """
+## Resumen de la tarea:
+Eres un evaluador académico experto en el curso {nombre_curso}. Tu tarea es asignar un puntaje objetivo entre 0.0 y 1.0 a la respuesta de un estudiante, comparándola con una respuesta modelo, según criterios académicos establecidos.
+
+## Información de contexto:
+- A continuación, se presenta la pregunta, la respuesta del estudiante y la respuesta modelo esperada.
+- También se indican los temas clave que deben estar presentes en la respuesta.
+
+Pregunta:
+{pregunta}
+
+Respuesta del estudiante:
+{respuesta_usuario}
+
+Respuesta modelo esperada:
+{respuesta_modelo}
+
+Temas clave esperados:
+{temas_formateados}
+
+## Instrucciones para el modelo:
+- Evalúa la respuesta del estudiante considerando los siguientes criterios:
+  1. Precisión conceptual.
+  2. Cobertura de los puntos clave.
+  3. Claridad y coherencia.
+  4. Equivalencia semántica con la respuesta modelo.
+  5. Relevancia con respecto a los temas clave.
+
+## Reglas adicionales:
+- Si la respuesta del estudiante es **semánticamente equivalente** a la respuesta modelo, incluso si está redactada con otras palabras, sinónimos o parafraseos, el puntaje DEBE ser exactamente **1.00**.
+- Considera como válidas las respuestas que expresen correctamente los temas clave aunque usen distinta redacción.
+
+## Penalizaciones obligatorias:
+- Si la respuesta está vacía, contiene solo signos, emojis, palabras irrelevantes o ruido (ej. "@@@", "...", "???", "ok", "sí", etc.), el puntaje DEBE ser exactamente **0.00**.
+- NO otorgues puntajes altos ni medios en estos casos.
+- Solo asigna un puntaje > 0.00 cuando exista contenido académico válido y relacionado con los temas clave.
+
+## Requisitos de estilo y formato de la respuesta:
+- DEBES responder SOLO con un número decimal entre 0.0 y 1.0, con dos decimales (ejemplo: 0.75).
+- NO DEBES incluir explicaciones, etiquetas, comentarios ni ningún otro texto adicional.
+- NO USES markdown ni comillas. NO uses bloques ``` de ningún tipo.
+- Responde ÚNICAMENTE el número, con dos decimales.
+"""
+
+def _invoke_prompt(prompt: str, max_tokens: int, temperature: float = 0.0) -> dict:
+    response = bedrock_helper.converse(
+        model=LLM_MODEL_ID,
+        messages=[{"role": "user", "content": [{"text": prompt}]}],
+        parameters={
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "top_p": 0.2
+        }
+    )
+    logger.info(f"Respuesta del modelo: {response}")
+    return response
+
+def _upload_evaluar(reto_ejecucion_id: str, usuario_id: int, silabo_id: int, unidad_id: int, sesion_id: int, score: str, prompt: str, ai_result: str, input_tokens: int, output_tokens: int):
+    """
+    Sube una evaluación realizada a la tabla DynamoDB con los datos especificados.
+    """
+    try:
+        current_datetime = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        # TTL en 5 días (432000 segundos)
+        # TTL en 7 días (604800 segundos)
+        ttl_seconds = 432000
+        ttl_timestamp = int((datetime.now() + timedelta(seconds=ttl_seconds)).timestamp())
+
+        item = {
+            "tipo_metodo_id": 674,
+            "reto_ejecucion_id": reto_ejecucion_id,
+            "usuario_id": usuario_id,
+            "date_time": current_datetime,
+            "silabo_id": silabo_id,
+            "unidad_id": unidad_id,
+            "sesion_id": sesion_id,
+            "score": score,
+            "prompt": prompt,
+            "ai_result": ai_result,
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "ttl": ttl_timestamp
+        }
+
+        evaluation_table_helper.put_item(data = item)
+        logger.info(f"Elemento subido con éxito: {item}")
+    except Exception as e:
+        logger.error(f"Error al subir el elemento: {e}")
+
+def lambda_handler(event, context):
+    try:
+        body = event.get("body")
+        if not body:
+            return {"statusCode": 400, "body": json.dumps({"success": False, "message": "Body requerido"})}
+        body = json.loads(body) if isinstance(body, str) else body
+
+        required_fields = ["RetoEjecucionId", "UsuarioId", "SilaboId", "UnidadId", "SesionId", "NombreCurso", "Complejidad", "Pregunta", "RespuestaModelo", "RespuestaUsuario", "Temas", "Umbral"]
+        missing_fields = [field for field in required_fields if field not in body]
+        if missing_fields:
+            return {
+                "statusCode": 400,
+                "body": json.dumps({
+                    "success": False,
+                    "message": f"Campos requeridos faltantes: {missing_fields}"
+                })
+            }
+        
+        reto_ejecucion_id = body["RetoEjecucionId"]
+        user_id = body["UsuarioId"]
+        syllabus_event_id = body["SilaboId"]
+        unidad_id = body["UnidadId"]
+        sesion_id = body["SesionId"]
+        nombre_curso = body["NombreCurso"]
+        complejidad = body["Complejidad"]
+        pregunta = body["Pregunta"]
+        respuesta_modelo = body["RespuestaModelo"]
+        respuesta_usuario = body["RespuestaUsuario"]
+        temas = body.get("Temas", None)
+        umbral = body["Umbral"]
+        
+        prompt = SCORE_PROMPT.format(
+            nombre_curso = nombre_curso,
+            pregunta = pregunta,
+            respuesta_usuario = respuesta_usuario,
+            respuesta_modelo = respuesta_modelo,
+            temas_formateados = ', '.join(temas),
+        )
+
+        response = _invoke_prompt(prompt=prompt, max_tokens=5)
+        score_response = response['output']['message']['content'][0]['text']
+
+        # Intentar detectar el número sin etiqueta
+        primera_linea = score_response.strip().splitlines()[0]
+        match = re.match(r"^\s*([0-9]*\.?[0-9]+)\s*$", primera_linea)
+
+        if match:
+            score = float(match.group(1))
+                
+            # Comparar con umbral
+            if score < umbral:
+                prompt = FEEDBACK_ALL_PROMPT.format(
+                    nombre_curso = nombre_curso,
+                    complejidad = complejidad,
+                    pregunta = pregunta,
+                    respuesta_modelo = respuesta_modelo,
+                    respuesta_usuario = respuesta_usuario,
+                    temas_formateados = ', '.join(temas),
+                )
+
+            else:
+                prompt = FEEDBACK_PROMPT.format(
+                    nombre_curso = nombre_curso,
+                    complejidad = complejidad,
+                    pregunta = pregunta,
+                    respuesta_modelo = respuesta_modelo,
+                    respuesta_usuario = respuesta_usuario,
+                    temas_formateados = ', '.join(temas),
+                )
+
+            response = _invoke_prompt(prompt=prompt, max_tokens=LLM_MAX_TOKENS, temperature=0.7)
+            feedback = response['output']['message']['content'][0]['text']
+            input_tokens = response['usage']['inputTokens']
+            output_tokens = response['usage']['outputTokens']
+
+            _upload_evaluar(
+                reto_ejecucion_id=reto_ejecucion_id,
+                usuario_id=user_id,
+                silabo_id=syllabus_event_id,
+                unidad_id=unidad_id,
+                sesion_id=sesion_id,
+                score=str(score),
+                prompt=prompt,
+                ai_result=feedback,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens
+            )
+        
+        else:
+            score = 0
+            feedback = "No se encontró el puntaje."
+            input_tokens = 0
+            output_tokens = 0
+
+            _upload_evaluar(
+                reto_ejecucion_id=reto_ejecucion_id,
+                usuario_id=user_id,
+                silabo_id=syllabus_event_id,
+                unidad_id=unidad_id,
+                sesion_id=sesion_id,
+                score=str(score),
+                prompt=prompt, # Enviará el prompt utilizado para obtener el score
+                ai_result=feedback,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens
+            )
+
+        return {
+            "statusCode": 200,
+            "body": json.dumps({
+                "success": True,
+                "score": score,
+                "feedback": feedback,
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens
+            })
+        }
+        
+    except Exception as e:
+        logger.error(f"Error en delete_history: {str(e)}")
+        return {
+            "statusCode": 500,
+            "body": json.dumps({
+                "success": False,
+                "message": str(e)
+            })
+        }
