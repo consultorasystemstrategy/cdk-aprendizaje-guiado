@@ -110,8 +110,8 @@ Puedes usar valores intermedios (ej. 0.60, 0.40) si es necesario.
 ## Validación antes de responder
 
 - Verifica que todos los criterios tengan un score.
-- Verifica que los criterio_id coincidan EXACTAMENTE con los proporcionados.
-- Verifica que todos los scores estén entre 0.00 y 1.00.
+- Verifica que cada criterio_id sea un NÚMERO ENTERO (sin comillas) idéntico al proporcionado.
+- Verifica que cada score sea un número decimal (sin comillas) entre 0.00 y 1.00.
 
 ---
 
@@ -121,10 +121,13 @@ Responde ÚNICAMENTE con un JSON válido:
 
 {{
   "scores_criterios": [
-    {{"criterio_id": <CriterioId>, "score": <valor entre 0.00 y 1.00>}},
+    {{"criterio_id": <CriterioId como número entero, sin comillas>, "score": <número decimal entre 0.00 y 1.00, sin comillas>}},
     ...
   ]
 }}
+
+Ejemplo de formato correcto:
+{{"scores_criterios": [{{"criterio_id": 12345, "score": 0.50}}]}}
 """
 
 # Prompt para respuesta INCORRECTA: genera feedback + nuevo reto en JSON
@@ -335,10 +338,10 @@ def _format_criterios_con_scores(criterios: list, scores_criterios: list, umbral
     """
     Formato estructurado para LLM. Sin scores numéricos, solo niveles cualitativos.
     """
-    scores_map = {sc["criterio_id"]: sc["score"] for sc in scores_criterios}
+    scores_map = {int(sc["criterio_id"]): float(sc["score"]) for sc in scores_criterios}
     blocks = []
     for crit in criterios:
-        crit_id = crit["CriterioId"]
+        crit_id = int(crit["CriterioId"])
         score_val = scores_map.get(crit_id, 0.0)
         nivel = "alto" if score_val >= umbral else "medio" if score_val >= limite_medio else "bajo"
         temas = [c["CampoTematico"] for c in crit.get("CamposTematicos", [])]
@@ -463,8 +466,27 @@ def _validate_intentos_anteriores(intentos: list) -> str | None:
     return None
 
 
+def _normalize_scores_criterios(scores_criterios: list) -> list:
+    """
+    Normaliza la salida del LLM: criterio_id -> int, score -> float.
+    Lanza ValueError/TypeError si algún valor no es convertible.
+    """
+    if not isinstance(scores_criterios, list):
+        raise TypeError("'scores_criterios' debe ser una lista.")
+
+    normalizados = []
+    for sc in scores_criterios:
+        if not isinstance(sc, dict):
+            raise TypeError("Cada elemento de 'scores_criterios' debe ser un objeto.")
+        normalizados.append({
+            "criterio_id": int(str(sc.get("criterio_id")).strip()),
+            "score": float(sc.get("score")),
+        })
+    return normalizados
+
+
 def _validate_scores_criterios(scores_criterios: list, criterios: list) -> str | None:
-    criterio_ids_esperados = {crit["CriterioId"] for crit in criterios}
+    criterio_ids_esperados = {int(crit["CriterioId"]) for crit in criterios}
     criterio_ids_recibidos = {sc.get("criterio_id") for sc in scores_criterios}
 
     faltantes = criterio_ids_esperados - criterio_ids_recibidos
@@ -569,8 +591,8 @@ def lambda_handler(event, context):
 
         try:
             score_result = _parse_llm_response(score_raw)
-            scores_criterios = score_result.get("scores_criterios", [])
-        except json.JSONDecodeError:
+            scores_criterios = _normalize_scores_criterios(score_result.get("scores_criterios", []))
+        except (json.JSONDecodeError, ValueError, TypeError, AttributeError):
             _upload_evaluation(
                 usuario_id=usuario_id,
                 reto_iteracion_id=reto_iteracion_id,

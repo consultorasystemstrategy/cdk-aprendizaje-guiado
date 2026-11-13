@@ -142,6 +142,74 @@ Responde ÚNICAMENTE con un JSON válido:
 }}
 """
 
+CHALLENGE_ENRICHMENT_NO_CASE_PROMPT = """
+### Instrucción
+
+Eres un experto en diseño instruccional y evaluación.
+
+Tu tarea es analizar la estructura pedagógica de un curso y una lista de retos ya existentes.
+
+Para cada reto debes:
+
+- Generar un título breve y específico.
+- Identificar qué criterios y campos temáticos están involucrados.
+- Asociar el reto únicamente con los criterios relevantes para su pregunta.
+
+NO debes modificar la pregunta ni la respuesta modelo.
+
+---
+
+### Estructura pedagógica del curso:
+
+{competencias_formateadas}
+
+---
+
+### Retos:
+
+{retos_formateados}
+
+---
+
+### Reglas de generación
+
+- El título debe tener entre 3 y 6 palabras.
+- Cada reto debe asociarse únicamente con criterios relevantes para la pregunta.
+- Por cada criterio seleccionado debes indicar únicamente los CampoTematicoId relacionados.
+- Utiliza únicamente la información proporcionada en la estructura pedagógica y los retos.
+- NO inventes criterios.
+- NO inventes campos temáticos.
+- NO modifiques la pregunta original.
+- NO modifiques la respuesta modelo original.
+- Genera también un nombre para la ruta de aprendizaje.
+- El nombre debe tener entre 3 y 6 palabras.
+- El nombre debe representar el eje temático principal de los retos.
+- No uses CamelCase, guiones ni caracteres especiales.
+
+---
+
+### Formato de respuesta
+
+Responde ÚNICAMENTE con un JSON válido:
+
+{{
+  "nombre": "Frase en español con 3 a 6 palabras separadas por espacios, que describa el eje temático de la ruta. No uses CamelCase, guiones ni caracteres especiales.",
+  "retos": [
+    {{
+      "reto_id": 1,
+      "titulo": "Título breve del reto",
+      "criterios": [
+        {{
+          "criterio_id": 100,
+          "campos_tematicos_ids": [1000, 1002]
+        }}
+      ]
+    }}
+  ]
+}}
+"""
+
+
 # ─────────────────────────────────────────────
 # HELPERS
 # ─────────────────────────────────────────────
@@ -355,13 +423,22 @@ def lambda_handler(event: Dict[str, Any], context: Any):
 
         competencias_formateadas = _format_competencias(body["Competencias"])
 
+        caso = body["Caso"]
+
         retos_formateados = _format_retos(body["Retos"])
 
-        prompt = CHALLENGE_ENRICHMENT_PROMPT.format(
-            competencias_formateadas=(competencias_formateadas),
-            caso=body["Caso"],
-            retos_formateados=(retos_formateados),
-        )
+        if caso.strip():
+            prompt = CHALLENGE_ENRICHMENT_PROMPT.format(
+                competencias_formateadas=(competencias_formateadas),
+                caso=caso,
+                retos_formateados=(retos_formateados),
+            )
+
+        else:
+            prompt = CHALLENGE_ENRICHMENT_NO_CASE_PROMPT.format(
+                competencias_formateadas=(competencias_formateadas),
+                retos_formateados=(retos_formateados),
+            )
 
         raw_response = _invoke_prompt(
             prompt=prompt, max_tokens=LLM_MAX_TOKENS, temperature=0.3

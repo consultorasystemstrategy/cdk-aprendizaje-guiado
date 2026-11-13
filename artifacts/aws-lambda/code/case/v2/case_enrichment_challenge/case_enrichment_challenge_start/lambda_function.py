@@ -126,6 +126,11 @@ def _validate_body(body: dict):
                             "y 'CampoTematico'."
                         )
 
+    caso = body.get("Caso", "")
+
+    if not isinstance(caso, str):
+        return "El campo 'Caso' debe ser una cadena de texto."
+
     retos = body.get("Retos", [])
 
     if not isinstance(retos, list) or len(retos) == 0:
